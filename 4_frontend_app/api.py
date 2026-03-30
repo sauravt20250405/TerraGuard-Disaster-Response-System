@@ -29,6 +29,19 @@ if not os.path.exists(_env_path):
 app = Flask(__name__)
 CORS(app)
 
+# ==========================================
+# FULL-STACK HOSTING (RENDER COMPATIBILITY)
+# ==========================================
+@app.route("/")
+def serve_index():
+    """Serves the main TerraGuard Web Application."""
+    return send_from_directory(BASE_DIR, "index.html")
+
+@app.route("/<path:path>")
+def serve_static_files(path):
+    """Dynamically serves all frontend CSS/JS assets."""
+    return send_from_directory(BASE_DIR, path)
+
 # --- CLOUD CONNECTION (All credentials from .env) ---
 def get_engine():
     db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
