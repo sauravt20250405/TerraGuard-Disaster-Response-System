@@ -14,55 +14,24 @@ load_dotenv(_env_path)
 
 DEV_MODE = os.getenv("TERRAGUARD_DEV_MODE", "").strip().lower() in ("1", "true", "yes")
 
-user = (os.getenv("DB_USER") or "avnadmin").strip()
-password = (os.getenv("DB_PASSWORD") or "").strip().strip("\r")
-host = (os.getenv("DB_HOST") or "terraguard-db-project-e68.a.aivencloud.com").strip()
-port = (os.getenv("DB_PORT") or "20095").strip()
-db_name = (os.getenv("DB_NAME") or "defaultdb").strip()
+# Local SQLite Engine for Production Offline Mode
+db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
+engine = create_engine(f"sqlite:///{db_path}")
 
-# 2. Double-check for special characters by encoding them properly
-# This is the industry-standard way to handle chaotic passwords
-safe_password = urllib.parse.quote_plus(password)
-
-# 3. Construct the connection string
-# Note: Aiven usually requires the 'defaultdb' name if you haven't changed it
-connection_string = f"mysql+pymysql://{user}:{safe_password}@{host}:{port}/{db_name}"
-
-CA_CERT_PATH = os.path.join(BASE_DIR, "ca.pem")
-
-
-# 4. Create engine with SSL requirements
-engine = create_engine(
-    connection_string,
-    connect_args = {
-    "ssl": {
-        "ca": CA_CERT_PATH 
-        }
-    }
-)
-
-
-# 4. INITIALIZATION: Create your project tables on the Cloud
-print("Checking Cloud Database Integrity...")
 try:
     if not DEV_MODE:
         with engine.begin() as conn:
-            # Create the specific database for your project
-            conn.execute(text("CREATE DATABASE IF NOT EXISTS TerraGuard_DB"))
-            conn.execute(text("USE TerraGuard_DB"))
-            
-            # Create the Weather_Logs table if it doesn't exist on Aiven yet
-            conn.execute(text("""
+            conn.execute(text('''
                 CREATE TABLE IF NOT EXISTS Weather_Logs (
-                    log_id INT AUTO_INCREMENT PRIMARY KEY,
-                    zone_id INT,
+                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    zone_id INTEGER,
                     rainfall_mm FLOAT,
                     soil_moisture_percent FLOAT,
                     ai_risk_score FLOAT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """))
-        print("Cloud Database Ready!")
+            '''))
+        print("Database Ready!")
     else:
         print("DEV MODE Active: Bypassing Cloud DB setup.")
 except Exception as e:
@@ -72,7 +41,7 @@ except Exception as e:
 
 
 if not DEV_MODE:
-    print(f"Connecting to Cloud DB at {host}...")
+    print(f"Connecting to Local Production DB...")
 
 # 2. Load the AI Brain
 # 2. Load the AI Brain (Dynamically find the path)
@@ -85,9 +54,21 @@ except FileNotFoundError:
     print(f"ERROR: landslide_model.pkl not found at {MODEL_PATH}")
     exit()
 
-# 3. Target Geological Zone (Shimla Ridge)
-LATITUDE = 31.1048
-LONGITUDE = 77.1734
+# 3. Target Geological Zone (Dynamic IP)
+try:
+    print("Fetching sensor location via IP lookup...")
+    ip_resp = requests.get("https://ipapi.co/json/", timeout=5)
+    ip_data = ip_resp.json()
+    LATITUDE = float(ip_data.get('latitude', 31.1048))
+    LONGITUDE = float(ip_data.get('longitude', 77.1734))
+    CITY = ip_data.get('city', 'Unknown District')
+    print(f"Virtual Sensor deployed to: {CITY} ({LATITUDE}, {LONGITUDE})")
+except Exception:
+    print("Could not fetch IP location, falling back to Shimla Ridge.")
+    LATITUDE = 31.1048
+    LONGITUDE = 77.1734
+    CITY = "Unknown District"
+
 ZONE_ID = 1 
 STATIC_SLOPE = 45.5 
 
@@ -133,14 +114,14 @@ try:
         risk_probabilities = landslide_model.predict_proba(ai_input)[0]
         risk_score = round(risk_probabilities[1] * 100, 2) 
         
-        print(f"[LIVE] Shimla Ridge -> Rain: {rain}mm | Soil: {soil:.1f}% | AI Risk Score: {risk_score}%")
+        print(f"[LIVE] Live Zone -> Rain: {rain}mm | Soil: {soil:.1f}% | AI Risk Score: {risk_score}%")
         
         if not DEV_MODE:
             try:
                 # Insert into MySQL
                 with engine.begin() as conn:
                     query = text("""
-                        INSERT INTO TerraGuard_DB.Weather_Logs (zone_id, rainfall_mm, soil_moisture_percent, ai_risk_score)
+                        INSERT INTO Weather_Logs (zone_id, rainfall_mm, soil_moisture_percent, ai_risk_score)
                         VALUES (:zone, :rain, :soil, :risk)
                     """)
                     conn.execute(query, {"zone": ZONE_ID, "rain": rain, "soil": soil, "risk": risk_score})
