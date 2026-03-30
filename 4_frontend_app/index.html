@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraGuard | Disaster Response Suite</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <style>
+        :root {
+            --bg-dark: #000000;
+            --bg-panel: #0a0a0a;
+            --bg-elevated: #111111;
+            --border: #222222;
+            --border-hover: #333333;
+            --text: #ededed;
+            --text-muted: #888888;
+            --accent-red: #e5484d;
+            --accent-red-hover: #f2555a;
+            --accent-green: #30a46c;
+            --accent-amber: #f5d90a;
+            --glass-bg: rgba(10, 10, 10, 0.6);
+            --gradient-accent: linear-gradient(145deg, #111 0%, #0a0a0a 100%);
+        }
+        * { box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: var(--bg-dark); color: var(--text); margin: 0; min-height: 100vh; font-size: 14px; letter-spacing: -0.01em; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+        /* Login Modal */
+        .login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+        .login-modal { background: var(--bg-panel); border: 1px solid var(--border); box-shadow: 0 24px 48px rgba(0,0,0,0.4), 0 0 0 1px inset rgba(255,255,255,0.05); border-radius: 12px; padding: 2.5rem; width: 100%; max-width: 400px; }
+        .login-modal h1 { margin: 0 0 2rem; font-size: 1.5rem; letter-spacing: -0.03em; font-weight: 600; text-align: center;}
+        .login-modal input { width: 100%; padding: 12px 16px; margin-bottom: 16px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; font-family: inherit; transition: all 0.2s ease; }
+        .login-modal input:focus { outline: none; border-color: var(--text-muted); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+        .login-modal button { width: 100%; padding: 12px; background: var(--text); color: var(--bg-dark); border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: 0.2s ease; }
+        .login-modal button:hover { background: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255,255,255,0.1); }
+        .login-error { color: var(--accent-red); font-size: 0.85rem; margin-top: 12px; text-align: center; }
+
+        /* Layout */
+        .app { display: flex; min-height: 100vh; }
+        .sidebar { width: 240px; background: var(--bg-panel); border-right: 1px solid var(--border); padding: 1.5rem 0; flex-shrink: 0; display: flex; flex-direction: column; }
+        .sidebar .brand { padding: 0 1.5rem 1.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+        .sidebar .brand h2 { margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; }
+        .sidebar nav button { width: 100%; text-align: left; padding: 10px 1.5rem; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; font-family: inherit; font-weight: 500; transition: all 0.15s; }
+        .sidebar nav button:hover { color: var(--text); }
+        .sidebar nav button.active { color: var(--text); background: linear-gradient(90deg, var(--bg-elevated) 0%, transparent 100%); border-left: 2px solid var(--text); padding-left: calc(1.5rem - 2px); }
+        .sidebar .logout { margin-top: auto; padding: 1rem 1.5rem; }
+        .sidebar .logout button { width: 100%; padding: 8px; background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        .sidebar .logout button:hover { color: var(--accent-red); border-color: var(--accent-red); }
+
+        /* Main Content */
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .main-header { padding: 1.25rem 2rem; background: var(--glass-bg); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+        .main-header h2 { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+        .risk-badge { padding: 4px 10px; border-radius: 20px; font-weight: 500; font-size: 0.8rem; border: 1px solid var(--border); background: var(--bg-elevated); display: flex; align-items: center; gap: 6px; }
+        .risk-badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+        .risk-badge.safe::before { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+        .risk-badge.danger::before { background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red); }
+
+        .content { flex: 1; display: flex; flex-direction: column; overflow: auto; padding: 2rem; }
+        
+        /* Glass Panels */
+        .panel { background: var(--gradient-accent); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%); pointer-events: none; }
+        .panel h3 { margin: 0 0 1.25rem; font-size: 1.05rem; font-weight: 500; color: var(--text); }
+        
+        /* Dashboard & Check-In */
+        .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .weather-info { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .weather-main { font-size: 2.2rem; font-weight: 600; letter-spacing: -0.04em; }
+        .weather-sub { color: var(--text-muted); font-size: 0.85rem; font-family: monospace; }
+        .tip-box { background: var(--bg-dark); border: 1px solid var(--border); border-left: 2px solid var(--accent-amber); padding: 1.25rem; border-radius: 6px; font-size: 0.9rem; line-height: 1.5; color: var(--text-muted); }
+        .checkin-btn { width: 100%; padding: 16px; background: rgba(48, 164, 108, 0.1); color: var(--accent-green); border: 1px solid rgba(48, 164, 108, 0.3); border-radius: 8px; font-size: 1.05rem; font-weight: 500; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 1rem;}
+        .checkin-btn:hover { background: rgba(48, 164, 108, 0.2); box-shadow: 0 4px 12px rgba(48,164,108,0.1); transform: translateY(-1px); }
+        
+        /* SOS Beacon */
+        .sos-section { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; margin-bottom: 2rem; position: relative; overflow: hidden; }
+        .sos-section::after { content:""; position:absolute; top:0; left:0; width:100%; height:3px; background:var(--accent-red); box-shadow: 0 0 15px var(--accent-red); }
+        .threat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-bottom: 1.5rem; margin-top: 0.5rem; }
+        .threat-btn { padding: 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: 0.2s;}
+        .threat-btn:hover { border-color: var(--text); color: var(--text); }
+        .threat-btn.active { background: rgba(229, 72, 77, 0.1); color: var(--text); border-color: rgba(229, 72, 77, 0.5); }
+        .sos-section textarea { width: 100%; height: 100px; padding: 16px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; font-family: inherit; resize: vertical; margin-bottom: 1rem; transition: 0.2s; }
+        .sos-section textarea:focus { outline: none; border-color: var(--text-muted); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+        .sos-btn { width: 100%; padding: 18px; background: var(--accent-red); color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 16px rgba(229,72,77,0.3); }
+        .sos-btn:hover { background: var(--accent-red-hover); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(229,72,77,0.4); }
+        .sos-status { color: var(--accent-green); font-weight: 500; margin-top: 12px; }
+
+        /* Map Wrappers */
+        .map-wrapper { position: relative; min-height: 400px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        #map, #mapSos, #mapIncidents, #mapComm { width: 100%; height: 100%; min-height: inherit; background: var(--bg-dark); }
+        .disaster-risk { margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; font-family: monospace; }
+        
+        /* Forms & Inputs */
+        .form-group { margin-bottom: 1.25rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+        .form-group input, .form-group select { width: 100%; padding: 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; font-family: inherit; transition: 0.2s; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--text-muted); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+        .submit-btn { padding: 12px 24px; background: var(--text); color: var(--bg-dark); border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: 0.2s; }
+        .submit-btn:hover { background: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255,255,255,0.1); }
+        
+        /* Incident KPI & Table (Agency) */
+        .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem; }
+        .kpi-card { background: var(--bg-elevated); border: 1px solid var(--border); border-top: 3px solid var(--border); border-radius: 8px; padding: 1.25rem; display: flex; flex-direction: column; gap: 8px; transition: 0.2s; }
+        .kpi-card:hover { transform: translateY(-2px); border-color: var(--border-hover); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        .kpi-card .label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+        .kpi-card .val { font-size: 1.75rem; font-weight: 600; font-family: monospace; color: var(--text); }
+        
+        .incidents-panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 2rem; }
+        .incidents-panel h3 { margin: 0; padding: 1.25rem 1.5rem; font-size: 0.95rem; font-weight: 500; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 14px 1.5rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-weight: 500; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg-elevated); }
+        td { font-size: 0.9rem; font-family: monospace; }
+        tr:hover { background: rgba(255,255,255,0.03); cursor: pointer; }
+        .critical { color: var(--accent-red); font-weight: 600; }
+        .dispatch-btn { padding: 8px 16px; background: var(--text); color: var(--bg-dark); border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.8rem; transition: 0.2s; }
+        .dispatch-btn:hover { background: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255,255,255,0.1); }
+        
+        /* Civilian Utility Vault & Res */
+        .vault-item { padding: 1rem 1.25rem; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; transition: 0.2s;}
+        .vault-item:hover { border-color: var(--text-muted); }
+        .resources-list { list-style: none; padding: 0; margin: 0; }
+        .resources-list li { padding: 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .first-aid-card { background: var(--bg-dark); padding: 1.25rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid var(--border); border-left: 3px solid var(--accent-green); }
+        
+        .view { display: none; margin-bottom: 1.5rem; }
+        .view.active { display: block; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<!-- Login Modal (shown when not authenticated) -->
+<div id="loginOverlay" class="login-overlay">
+    <div class="login-modal">
+        <h1>🛡️ TerraGuard Login</h1>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <input type="text" id="loginPhone" placeholder="Phone Number" required autocomplete="tel">
+            <input type="password" id="loginPassword" placeholder="Password" required>
+            <button type="submit">Sign In</button>
+            <div id="loginError" class="login-error"></div>
+        </form>
+    </div>
+</div>
+
+<!-- App (shown after authentication) -->
+<div id="app" class="app" style="display: none;">
+    <aside class="sidebar">
+        <div class="brand"><h2>🛡️ TerraGuard</h2><span id="userRole" class="text-muted" style="font-size:0.8rem;color:var(--text-muted)"></span></div>
+        <nav>
+            <button id="navDashboard" class="civ-nav active" onclick="showView('dashboard')" style="display:none" data-i18n="nav_dashboard">📊 Daily Dashboard</button>
+            <button id="navMap" class="agency-nav active" onclick="showView('map')" style="display:none" data-i18n="nav_map">🗺️ Live Map</button>
+            <button id="navSos" class="civ-nav" onclick="showView('sos')" style="display:none" data-i18n="nav_sos">🚨 SOS Beacon</button>
+            <button id="navCommunity" class="civ-nav" onclick="showView('community')" style="display:none" data-i18n="nav_report">🏗️ Report Hazard</button>
+            <button id="navResources" class="civ-nav" onclick="showView('resources')" style="display:none" data-i18n="nav_resources">🏥 Local Resources</button>
+            <button id="navVault" class="civ-nav" onclick="showView('vault')" style="display:none" data-i18n="nav_vault">🗄️ Digital Vault</button>
+            <button id="navFirstAid" class="civ-nav" onclick="showView('firstAid')" style="display:none" data-i18n="nav_firstaid">⚕️ First Aid Guide</button>
+            <button id="navIncidents" class="agency-nav" onclick="showView('incidents')" style="display:none" data-i18n="nav_incidents">📋 Live Incidents</button>
+        </nav>
+        <div class="lang-toggle" style="margin-top: auto; padding: 1rem 1rem 0; border-top: 1px solid var(--border);">
+            <button onclick="toggleLanguage()" style="width: 100%; padding: 8px; background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; cursor: pointer;">🌐 EN / HI</button>
+        </div>
+        <div class="logout" style="margin-top: 0; padding-top: 0.5rem; border-top: none;"><button onclick="logout()" data-i18n="logout">Log Out</button></div>
+    </aside>
+    
+    <main class="main">
+        <header class="main-header">
+            <h2 id="headerTitle">Command Center</h2>
+            <div id="riskBadge" class="risk-badge safe">Risk: --%</div>
+        </header>
+        
+        <div class="content">
+            <!-- Civilian Daily Dashboard -->
+            <div id="viewDashboard" class="view">
+                <div class="dashboard-grid">
+                    <div class="panel">
+                        <h3 data-i18n="weather_title">🌤️ Daily Weather & Safety</h3>
+                        <div id="dashWeather">Loading Shimla weather...</div>
+                    </div>
+                    <div class="panel">
+                        <h3 data-i18n="tips_title">🏔️ Himalayan Safety Tip</h3>
+                        <div class="tip-box" id="dailyTip">Loading daily tip...</div>
+                    </div>
+                </div>
+                <div class="panel" style="margin-top: 1.5rem;">
+                    <h3 data-i18n="family_checkin">👨‍👩‍👧 Family Check-In</h3>
+                    <p style="color:var(--text-muted); font-size:0.9rem" data-i18n="family_desc">Instantly notify 3 pre-saved contacts that you are safe, along with your GPS location.</p>
+                    <button class="checkin-btn" onclick="sendFamilyCheckin()">📍 I AM SAFE (Send Location)</button>
+                    <p id="checkinStatus" style="color:var(--accent-green); margin-top: 10px; font-weight: 600;"></p>
+                </div>
+            </div>
+            
+            <!-- Community Reporting -->
+            <div id="viewCommunity" class="view">
+                <div class="panel">
+                    <h3 data-i18n="report_hazard">🏗️ Report Non-Emergency Hazard</h3>
+                    <p style="color:var(--text-muted); margin-bottom: 1.5rem" data-i18n="report_desc">Help the community by reporting fallen trees, blocked drains, or road cracks.</p>
+                    <div class="form-group">
+                        <label data-i18n="hazard_type">Hazard Type</label>
+                        <select id="hazardType">
+                            <option value="Fallen Tree">Fallen Tree</option>
+                            <option value="Road Block">Road Block</option>
+                            <option value="Landslide Debris">Landslide Debris</option>
+                            <option value="Blocked Drain">Blocked Drain</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="hazard_desc">Description</label>
+                        <input type="text" id="hazardDesc" placeholder="E.g., Large pine tree blocking Kufri road">
+                    </div>
+                    <button class="submit-btn" onclick="submitCommunityReport()" data-i18n="submit_btn">Submit Report to PWD / NDRF</button>
+                    <p id="communityReportStatus" style="color:var(--accent-green); margin-top: 10px; font-weight: 600;"></p>
+                </div>
+                <div id="mapWrapperComm" class="map-wrapper" style="margin-top: 1.5rem; min-height: 300px;">
+                    <div id="mapComm"></div>
+                </div>
+            </div>
+
+            <!-- Local Resources -->
+            <div id="viewResources" class="view">
+                <div class="panel">
+                    <h3 data-i18n="local_resources">🏥 Local Emergency Resources</h3>
+                    <input type="text" placeholder="Search hospitals, police, plumbers..." style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; color:white; margin-bottom: 1rem;">
+                    <ul class="resources-list">
+                        <li>
+                            <div><strong>Shimla General Hospital</strong><br><small style="color:var(--text-muted)">The Ridge, Shimla</small></div>
+                            <span style="color:var(--accent-green)">0177-2803333</span>
+                        </li>
+                        <li>
+                            <div><strong>Traffic Police Helpline</strong><br><small style="color:var(--text-muted)">Sector 4</small></div>
+                            <span style="color:var(--accent-green)">0177-2812344</span>
+                        </li>
+                        <li>
+                            <div><strong>Local Plumber (Rajesh)</strong><br><small style="color:var(--text-muted)">Pants Available 24/7</small></div>
+                            <span style="color:var(--accent-green)">9876543212</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Digital Vault -->
+            <div id="viewVault" class="view">
+                <div class="panel">
+                    <h3 data-i18n="digital_vault">🗄️ Offline Digital Vault</h3>
+                    <p style="color:var(--text-muted)" data-i18n="vault_desc">Securely store critical documents for offline access during evacuations.</p>
+                    <button style="padding:10px; background:var(--bg-elevated); color:white; border:1px solid var(--border); border-radius:6px; margin-bottom:1rem; cursor:pointer;" onclick="alert('Feature simulated: File dialog would open here.')">+ Add Document</button>
+                    <div id="vaultDocuments">
+                        <div class="vault-item">
+                            <div>📄 <strong>Aadhaar Card</strong> (Encrypted)</div>
+                            <button style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">View</button>
+                        </div>
+                        <div class="vault-item">
+                            <div>🏥 <strong>Family Medical Policy</strong> (Encrypted)</div>
+                            <button style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">View</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- First Aid Guide -->
+            <div id="viewFirstAid" class="view">
+                <div class="panel">
+                    <h3 data-i18n="first_aid">⚕️ Offline First Aid Guide</h3>
+                    <div class="first-aid-card">
+                        <strong data-i18n="fa_cpr">CPR Basics</strong>
+                        <p style="font-size:0.9rem; color:var(--text-muted); margin-top:5px;">Check responsiveness. Call SOS. Push hard and fast in the center of the chest (100-120 beats per minute).</p>
+                    </div>
+                    <div class="first-aid-card">
+                        <strong data-i18n="fa_fracture">Checking Splints / Fractures</strong>
+                        <p style="font-size:0.9rem; color:var(--text-muted); margin-top:5px;">Do not try to realign the bone. Immobilize the injured area using a makeshift splint (wood/magazines).</p>
+                    </div>
+                    <div class="first-aid-card">
+                        <strong data-i18n="fa_cold">Frostbite & Hypothermia</strong>
+                        <p style="font-size:0.9rem; color:var(--text-muted); margin-top:5px;">Move to a warm room. Remove wet clothing. Warm the core first, not limbs. Give warm beverages.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Map View -->
+            <div id="viewMap" class="view active">
+                <div id="mapWrapper" class="map-wrapper">
+                    <div id="map"></div>
+                </div>
+                <div id="disasterRisk" class="disaster-risk">Loading historical disaster risk for map center...</div>
+            </div>
+            
+            <!-- SOS Beacon (Civilian primary) -->
+            <div id="viewSos" class="view">
+                <div class="sos-section">
+                    <h3>🚨 Emergency SOS Beacon</h3>
+                    <p style="color:var(--text-muted);margin:0 0 12px">Select threat type to prioritize response.</p>
+                    <div class="threat-grid">
+                        <button class="threat-btn active" onclick="selectThreat(this, 'General')">General</button>
+                        <button class="threat-btn" onclick="selectThreat(this, 'Medical Emergency')">⚕️ Medical</button>
+                        <button class="threat-btn" onclick="selectThreat(this, 'Fire/Smoke')">🔥 Fire</button>
+                        <button class="threat-btn" onclick="selectThreat(this, 'Violence/Crime')">⚠️ Violence</button>
+                        <button class="threat-btn" onclick="selectThreat(this, 'Structure Collapse')">🏢 Trapped</button>
+                    </div>
+                    <textarea id="sosMessage" placeholder="Provide extra details (optional)..."></textarea>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
+                        <button class="sos-btn" style="flex: 2" onclick="sendSOS()">🚨 TRANSMIT SOS</button>
+                        <button class="sos-btn" style="flex: 1; background: var(--accent-amber); color: black;" onclick="window.location.href='tel:112'" data-i18n="direct_call">📞 Direct Call</button>
+                    </div>
+                    
+                    <p id="sosStatus" class="sos-status"></p>
+                </div>
+                <div id="mapWrapperSos" class="map-wrapper" style="min-height:280px"><div id="mapSos"></div></div>
+                <div id="disasterRiskSos" class="disaster-risk">Pan map to see disaster risk for that region.</div>
+            </div>
+            
+            <!-- Live Incidents Table -->
+            <div id="viewIncidents" class="view">
+                <div id="mapWrapperInc" class="map-wrapper" style="margin-bottom: 2rem; min-height:260px"><div id="mapIncidents"></div></div>
+                
+                <div class="kpi-grid">
+                    <div class="kpi-card" style="border-top-color: var(--accent-red)">
+                        <div class="label">Critical Active</div><div class="val" id="kpiCritical">0</div>
+                    </div>
+                    <div class="kpi-card" style="border-top-color: var(--accent-amber)">
+                        <div class="label">Total Active</div><div class="val" id="kpiActive">0</div>
+                    </div>
+                    <div class="kpi-card" style="border-top-color: var(--accent-green)">
+                        <div class="label">Resolved (24h)</div><div class="val" id="kpiResolved">0</div>
+                    </div>
+                </div>
+
+                <div class="incidents-panel">
+                    <h3 id="incidentsTitle">Live Incidents</h3>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>ID</th><th>Reporter</th><th>Message</th><th>Severity</th><th>Status</th></tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Incident Detail Modal (Agency) -->
+<div id="incidentModal" class="login-overlay" style="display:none;">
+    <div class="login-modal" style="max-width:550px">
+        <h2 style="margin-top:0; border-bottom:1px solid var(--border); padding-bottom:10px;">Incident Dashboard <span id="mdlStatus" style="float:right; font-size:12px; padding:4px 8px; background:var(--bg-elevated); border-radius:4px;">New</span></h2>
+        
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:20px">
+            <div><small style="color:var(--text-muted)">Reporter</small><br><span id="mdlName">-</span></div>
+            <div><small style="color:var(--text-muted)">Phone</small><br><span id="mdlPhone" style="font-family:monospace">-</span></div>
+            <div><small style="color:var(--text-muted)">Blood Group</small><br><span id="mdlBlood">-</span></div>
+            <div><small style="color:var(--text-muted)">Time Reported</small><br><span id="mdlTime">-</span></div>
+        </div>
+        
+        <div style="margin-top:20px;">
+            <small style="color:var(--text-muted)">Threat & Classification</small>
+            <div style="padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; margin-top:5px; font-family:monospace; color:var(--accent-amber)" id="mdlCat">-</div>
+        </div>
+
+        <div style="margin-top:20px;">
+            <small style="color:var(--text-muted)">Raw Signal / Message</small>
+            <div style="padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; margin-top:5px; font-style:italic" id="mdlMsg">-</div>
+        </div>
+        
+        <div style="margin-top:30px; border-top:1px solid var(--border); padding-top:20px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+            <button class="dispatch-btn" style="flex:1; min-width: 120px;" id="mdlDispatchBtn">Dispatch Rescue</button>
+            <button class="dispatch-btn" style="flex:1; background:var(--accent-green); color:white; border:none; min-width: 120px;" id="mdlCallVictimBtn" onclick="window.location.href='tel:' + document.getElementById('mdlPhone').innerText">📞 Call Victim</button>
+            <select id="mdlTransferDept" style="flex:1; background:var(--bg-dark); color:white; border:1px solid var(--border); border-radius:6px; padding:10px; min-width: 150px;">
+                <option value="">Transfer Dept...</option>
+                <option value="Police_Response">Police</option>
+                <option value="Fire_Response">Fire</option>
+                <option value="Medical_Response">Medical</option>
+                <option value="NDRF">NDRF</option>
+            </select>
+            <button class="dispatch-btn" style="background:var(--bg-elevated); border:1px solid var(--border); min-width: 80px;" id="mdlTransferBtn">Transfer</button>
+        </div>
+        
+        <button style="width:100%; margin-top:15px; padding:10px; background:transparent; color:var(--text-muted); border:1px solid var(--border); cursor:pointer; border-radius:6px; transition:0.2s;" onclick="closeIncidentModal()">Close Dashboard</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+    const API_URL = window.location.origin;
+    const SHIMLA = [31.1048, 77.1734];
+    let map, mapSos, mapIncidents;
+    let mapsInitialized = false;
+    let markers = [], markersSos = [], markersInc = [];
+    let histMarkers = [], histMarkersSos = [], histMarkersInc = [], histMarkersComm = [];
+    let refreshInterval;
+    let currentUser = null;
+    let currentLang = "en";
+    let currentThreat = "General";
+    let incidentsData = {};
+    let activeModalIncidentId = null;
+    
+    const translations = {
+        en: {
+            nav_dashboard: "📊 Daily Dashboard", nav_map: "🗺️ Live Map", nav_sos: "🚨 SOS Beacon", nav_report: "🏗️ Report Hazard",
+            nav_resources: "🏥 Local Resources", nav_vault: "🗄️ Digital Vault", nav_firstaid: "⚕️ First Aid Guide", nav_incidents: "📋 Live Incidents",
+            logout: "Log Out", weather_title: "🌤️ Daily Weather & Safety", tips_title: "🏔️ Himalayan Safety Tip",
+            family_checkin: "👨‍👩‍👧 Family Check-In", family_desc: "Instantly notify 3 pre-saved contacts that you are safe, along with your GPS location.",
+            report_hazard: "🏗️ Report Non-Emergency Hazard", report_desc: "Help the community by reporting fallen trees, blocked drains, or road cracks.",
+            hazard_type: "Hazard Type", hazard_desc: "Description", submit_btn: "Submit Report to PWD / NDRF",
+            local_resources: "🏥 Local Emergency Resources", digital_vault: "🗄️ Offline Digital Vault", vault_desc: "Securely store critical documents for offline access during evacuations.",
+            first_aid: "⚕️ Offline First Aid Guide", fa_cpr: "CPR Basics", fa_fracture: "Checking Splints / Fractures", fa_cold: "Frostbite & Hypothermia", direct_call: "📞 Direct Call"
+        },
+        hi: {
+            nav_dashboard: "📊 दैनिक डैशबोर्ड", nav_map: "🗺️ लाइव मैप", nav_sos: "🚨 आपातकालीन (SOS)", nav_report: "🏗️ खतरे की रिपोर्ट करें",
+            nav_resources: "🏥 स्थानीय संसाधन", nav_vault: "🗄️ डिजिटल वॉल्ट", nav_firstaid: "⚕️ प्राथमिक चिकित्सा", nav_incidents: "📋 लाइव घटनाएँ",
+            logout: "लॉग आउट", weather_title: "🌤️ दैनिक मौसम और सुरक्षा", tips_title: "🏔️ हिमालयन सुरक्षा टिप",
+            family_checkin: "👨‍👩‍👧 परिवार चेक-इन", family_desc: "3 पहले से सहेजे गए संपर्कों को तुरंत सूचित करें कि आप सुरक्षित हैं, साथ ही अपना GPS स्थान भेजें।",
+            report_hazard: "🏗️ गैर-आपातकालीन खतरे की रिपोर्ट करें", report_desc: "गिरे हुए पेड़ों या अवरुद्ध सड़कों की रिपोर्ट करके समुदाय की मदद करें।",
+            hazard_type: "खतरे का प्रकार", hazard_desc: "विवरण", submit_btn: "रिपोर्ट दर्ज करें",
+            local_resources: "🏥 स्थानीय आपातकालीन संसाधन", digital_vault: "🗄️ ऑफ़लाइन डिजिटल वॉल्ट", vault_desc: "निकासी के दौरान ऑफ़लाइन पहुंच के लिए महत्वपूर्ण दस्तावेज़ों को सुरक्षित रूप से संग्रहीत करें।",
+            first_aid: "⚕️ ऑफ़लाइन प्राथमिक चिकित्सा मार्गदर्शिका", fa_cpr: "सीपीआर बेसिक्स", fa_fracture: "फ्रैक्चर की जांच", fa_cold: "फ्रॉस्टबाइट और हाइपोथर्मिया", direct_call: "📞 सीधा कॉल"
+        }
+    };
+    
+    function toggleLanguage() {
+        currentLang = currentLang === "en" ? "hi" : "en";
+        applyLanguage(currentLang);
+    }
+    
+    function selectThreat(btn, threat) {
+        document.querySelectorAll('.threat-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentThreat = threat;
+    }
+    
+    function applyLanguage(lang) {
+        document.querySelectorAll("[data-i18n]").forEach(el => {
+            const key = el.getAttribute("data-i18n");
+            if (translations[lang] && translations[lang][key]) {
+                if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+                    el.placeholder = translations[lang][key];
+                } else {
+                    el.innerHTML = translations[lang][key];
+                }
+            }
+        });
+    }
+
+    // ---------- Session Guard ----------
+    function loadSession() {
+        const uid = localStorage.getItem("terraguard_user_id");
+        const rid = localStorage.getItem("terraguard_role_id");
+        const rname = localStorage.getItem("terraguard_role_name");
+        if (uid && rname) {
+            currentUser = { user_id: uid, role_id: rid, role_name: rname };
+            document.getElementById("loginOverlay").style.display = "none";
+            document.getElementById("app").style.display = "flex";
+            document.getElementById("userRole").textContent = rname;
+            initAfterAuth();
+            return true;
+        }
+        return false;
+    }
+
+    function saveSession(data) {
+        localStorage.setItem("terraguard_user_id", data.user_id);
+        localStorage.setItem("terraguard_role_id", data.role_id || "");
+        localStorage.setItem("terraguard_role_name", data.role_name || "Civilian");
+        currentUser = data;
+    }
+
+    function logout() {
+        localStorage.removeItem("terraguard_user_id");
+        localStorage.removeItem("terraguard_role_id");
+        localStorage.removeItem("terraguard_role_name");
+        currentUser = null;
+        document.getElementById("loginOverlay").style.display = "flex";
+        document.getElementById("app").style.display = "none";
+    }
+
+    // ---------- Login ----------
+    async function handleLogin(e) {
+        e.preventDefault();
+        const phone = document.getElementById("loginPhone").value.trim();
+        const pwd = document.getElementById("loginPassword").value;
+        const errEl = document.getElementById("loginError");
+        errEl.textContent = "";
+        try {
+            const res = await fetch(`${API_URL}/api/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ phone_number: phone, password: pwd })
+            });
+            const data = await res.json();
+            if (data.success) {
+                saveSession(data);
+                document.getElementById("loginOverlay").style.display = "none";
+                document.getElementById("app").style.display = "flex";
+                document.getElementById("userRole").textContent = data.role_name;
+                initAfterAuth();
+            } else {
+                errEl.textContent = data.error || "Login failed";
+            }
+        } catch (e) {
+            errEl.textContent = "Network error. Is the API running?";
+        }
+    }
+
+    // ---------- Post-Auth Init ----------
+    function initAfterAuth() {
+        const isCivilian = currentUser.role_name === "Civilian";
+        document.getElementById("headerTitle").textContent = isCivilian ? "TerraGuard | Safety Assistant" : "Command Center";
+        
+        document.querySelectorAll('.civ-nav').forEach(el => el.style.display = isCivilian ? "block" : "none");
+        document.querySelectorAll('.agency-nav').forEach(el => el.style.display = isCivilian ? "none" : "block");
+        
+        document.getElementById("incidentsTitle").textContent = "Live Incidents – " + (currentUser.role_name || "").replace(/_/g, " ");
+        if (isCivilian) showView("dashboard"); else showView("map");
+        initMaps();
+        fetchRisk();
+        fetchIncidents();
+        fetchDisasterRisk();
+        if (isCivilian) initCivilianDashboard();
+        clearInterval(refreshInterval);
+        refreshInterval = setInterval(refreshData, 5000);
+        applyLanguage(currentLang);
+    }
+
+    function initMaps() {
+        if (mapsInitialized) return;
+        mapsInitialized = true;
+        const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+        
+        map = L.map("map").setView(SHIMLA, 13);
+        L.tileLayer(tileUrl, { attribution: "© OSM" }).addTo(map);
+        map.on("moveend", function() { const c = map.getCenter(); fetchDisasterRiskFor(c.lat, c.lng); });
+        
+        mapSos = L.map("mapSos").setView(SHIMLA, 13);
+        L.tileLayer(tileUrl, { attribution: "© OSM" }).addTo(mapSos);
+        mapSos.on("moveend", function() { const c = mapSos.getCenter(); fetchDisasterRiskFor(c.lat, c.lng); });
+        
+        mapIncidents = L.map("mapIncidents").setView(SHIMLA, 13);
+        L.tileLayer(tileUrl, { attribution: "© OSM" }).addTo(mapIncidents);
+        mapIncidents.on("moveend", function() { const c = mapIncidents.getCenter(); fetchDisasterRiskFor(c.lat, c.lng); });
+
+        const mcDiv = document.getElementById("mapComm");
+        if(mcDiv) {
+            mapComm = L.map("mapComm").setView(SHIMLA, 13);
+            L.tileLayer(tileUrl, { attribution: "© OSM" }).addTo(mapComm);
+            mapComm.on("moveend", function() { const c = mapComm.getCenter(); fetchDisasterRiskFor(c.lat, c.lng); });
+        }
+    }
+
+    function showView(name) {
+        document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+        document.querySelectorAll(".sidebar nav button").forEach(b => b.classList.remove("active"));
+        const cap = name.charAt(0).toUpperCase() + name.slice(1);
+        const view = document.getElementById("view" + cap);
+        const btn = document.getElementById("nav" + cap);
+        if (view) view.classList.add("active");
+        if (btn) btn.classList.add("active");
+        if (name === "incidents" && currentUser?.role_name !== "Civilian") fetchDashboard();
+        setTimeout(() => { 
+            if (map) map.invalidateSize(); 
+            if (mapSos) mapSos.invalidateSize(); 
+            if (mapIncidents) mapIncidents.invalidateSize(); 
+            if (typeof mapComm !== 'undefined' && mapComm) mapComm.invalidateSize();
+        }, 100);
+    }
+
+    // ---------- Data Fetch ----------
+    async function fetchRisk() {
+        try {
+            const res = await fetch(`${API_URL}/api/weather_risk`);
+            const data = await res.json();
+            const badge = document.getElementById("riskBadge");
+            badge.textContent = `Risk: ${data.ai_risk_score}%`;
+            badge.className = "risk-badge " + (data.high_risk ? "danger" : "safe");
+            document.getElementById("mapWrapper").classList.toggle("high-risk", data.high_risk);
+            document.getElementById("mapWrapperSos").classList.toggle("high-risk", data.high_risk);
+            document.getElementById("mapWrapperInc").classList.toggle("high-risk", data.high_risk);
+        } catch (_) {}
+    }
+
+    async function fetchIncidents() {
+        try {
+            const res = await fetch(`${API_URL}/api/incidents`);
+            const data = await res.json();
+            if (data.incidents) updateMapPins(data.incidents);
+        } catch (_) {}
+    }
+
+    function getActiveMapCenter() {
+        const view = document.querySelector(".view.active");
+        if (!view) return SHIMLA;
+        if (view.id === "viewMap" && map) return map.getCenter();
+        if (view.id === "viewSos" && mapSos) return mapSos.getCenter();
+        if (view.id === "viewIncidents" && mapIncidents) return mapIncidents.getCenter();
+        return { lat: SHIMLA[0], lng: SHIMLA[1] };
+    }
+
+    async function fetchDisasterRiskFor(lat, lng) {
+        const ids = ["disasterRisk", "disasterRiskSos", "disasterRiskInc"];
+        try {
+            ids.forEach(id => {
+                const e = document.getElementById(id);
+                if (e) e.innerHTML = `<strong>Historical Risk:</strong> Loading for ${lat.toFixed(2)}°N, ${lng.toFixed(2)}°E...`;
+            });
+            const res = await fetch(`${API_URL}/api/disaster_risk?lat=${lat}&lng=${lng}`);
+            const data = await res.json();
+            if (data.error) {
+                ids.forEach(id => {
+                    const e = document.getElementById(id);
+                    if (e) e.innerHTML = "<strong>Historical Risk:</strong> Model not loaded.";
+                });
+                addHistoricalPins([]);
+                return;
+            }
+            const msg = data.nearby_count === 0
+                ? `No disasters in 150km of ${lat.toFixed(2)}°N, ${lng.toFixed(2)}°E. Pan map to check other regions.`
+                : `${data.risk_score}% at ${lat.toFixed(2)}°N, ${lng.toFixed(2)}°E · ${data.nearby_count} disasters within 150km · Top: ${(data.top_disaster_types || []).map(t => t.type + " (" + t.count + ")").join(", ")}. Pan map to update.`;
+            ids.forEach(id => {
+                const e = document.getElementById(id);
+                if (e) e.innerHTML = `<strong>Historical Risk:</strong> ${msg}`;
+            });
+            addHistoricalPins(data.nearby || []);
+        } catch (_) {
+            ids.forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = "<strong>Historical Risk:</strong> --"; });
+        }
+    }
+
+    async function fetchDisasterRisk() {
+        const c = getActiveMapCenter();
+        const lat = typeof c === "object" ? c.lat : SHIMLA[0];
+        const lng = typeof c === "object" ? c.lng : SHIMLA[1];
+        await fetchDisasterRiskFor(lat, lng);
+    }
+
+    function addHistoricalPins(nearby) {
+        const maps = [map, mapSos, mapIncidents];
+        const arrs = [histMarkers, histMarkersSos, histMarkersInc];
+        maps.forEach((m, i) => {
+            if (!m) return;
+            arrs[i].forEach(x => { try { m.removeLayer(x); } catch (_) {} });
+            arrs[i].length = 0;
+        });
+        const icon = L.divIcon({ className: "pin", html: "<span style='background:#d29922;width:8px;height:8px;border-radius:50%;display:block;border:1px solid white'></span>", iconSize: [10, 10] });
+        nearby.slice(0, 20).forEach(d => {
+            const lat = parseFloat(d.Latitude), lng = parseFloat(d.Longitude);
+            if (isNaN(lat) || isNaN(lng)) return;
+            const tooltip = `${d.disaster_type || "Disaster"} (${d["Start Year"] || "?"}) - ${d.Location || ""}`;
+            maps.forEach((m, i) => {
+                if (!m) return;
+                const marker = L.marker([lat, lng], { icon }).addTo(m);
+                marker.bindTooltip(tooltip, { permanent: false });
+                arrs[i].push(marker);
+            });
+        });
+    }
+
+    function refreshData() {
+        fetchRisk();
+        fetchIncidents();
+        fetchDisasterRisk();
+        if (typeof fetchCommunityReports === "function") fetchCommunityReports();
+        if (currentUser && currentUser.role_name !== "Civilian") fetchDashboard();
+    }
+
+    function updateMapPins(incidents) {
+        if (!map || !mapSos || !mapIncidents) return;
+        const clearMarkers = (arr, m) => { arr.forEach(x => { try { m.removeLayer(x); } catch (_) {} }); arr.length = 0; };
+        clearMarkers(markers, map);
+        clearMarkers(markersSos, mapSos);
+        clearMarkers(markersInc, mapIncidents);
+        const addPin = (lat, lng, msg, m, arr) => {
+            if (lat == null || lng == null) return;
+            const icon = L.divIcon({ className: "pin", html: "<span style='background:#da3633;width:12px;height:12px;border-radius:50%;display:block;border:2px solid white'></span>", iconSize: [16, 16] });
+            const marker = L.marker([lat, lng], { icon }).addTo(m);
+            marker.bindTooltip(msg || "Incident", { permanent: false });
+            arr.push(marker);
+        };
+        incidents.forEach(i => {
+            const lat = parseFloat(i.latitude), lng = parseFloat(i.longitude);
+            addPin(lat, lng, i.raw_message, map, markers);
+            addPin(lat, lng, i.raw_message, mapSos, markersSos);
+            addPin(lat, lng, i.raw_message, mapIncidents, markersInc);
+        });
+    }
+
+    // ---------- Civilian Additional Logic ----------
+    async function initCivilianDashboard() {
+        try {
+            const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=31.1048&longitude=77.1734&current_weather=true&hourly=uv_index&timezone=Asia/Kolkata");
+            const data = await res.json();
+            const temp = data.current_weather.temperature;
+            const wind = data.current_weather.windspeed;
+            const uv = data.hourly.uv_index[new Date().getHours()] || 0;
+            document.getElementById("dashWeather").innerHTML = `
+                <div class="weather-info">
+                    <div class="weather-main">${temp}°C</div>
+                    <div class="weather-sub">Wind: ${wind} km/h<br>UV Index: ${uv}</div>
+                </div>`;
+        } catch(e) {
+            document.getElementById("dashWeather").innerHTML = "Weather data offline";
+        }
+        
+        const tips = [
+            "Driving to Kufri today? Check for black ice on the roads.",
+            "Always keep an emergency kit with warm layers and a flashlight.",
+            "During heavy rain, avoid parking near steep retaining walls.",
+            "Keep your digital vault updated with your latest IDs."
+        ];
+        document.getElementById("dailyTip").textContent = tips[Math.floor(Math.random() * tips.length)];
+    }
+
+    function sendFamilyCheckin() {
+        const btn = document.querySelector(".checkin-btn");
+        const status = document.getElementById("checkinStatus");
+        if(btn.disabled) return;
+        btn.disabled = true;
+        btn.innerText = "📍 Acquiring GPS...";
+        
+        const successCb = (lat, lng) => {
+            const link = `https://maps.google.com/?q=${lat},${lng}`;
+            setTimeout(() => {
+                status.innerHTML = `✅ SMS sent to 3 contacts with location:<br><a href="${link}" target="_blank" style="color:var(--text)">${lat.toFixed(4)}, ${lng.toFixed(4)}</a>`;
+                btn.innerText = "📍 I AM SAFE (Send Location)";
+                btn.disabled = false;
+            }, 800);
+        };
+
+        if(navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => successCb(pos.coords.latitude, pos.coords.longitude),
+                () => successCb(SHIMLA[0], SHIMLA[1]) // fallback to Shimla
+            );
+        } else {
+            successCb(SHIMLA[0], SHIMLA[1]);
+        }
+    }
+    
+    async function submitCommunityReport() {
+        const cType = document.getElementById("hazardType").value;
+        const cDesc = document.getElementById("hazardDesc").value.trim();
+        const stat = document.getElementById("communityReportStatus");
+        if(!cDesc) return alert("Please provide a description.");
+        
+        const payload = { type: cType, description: cDesc, lat: SHIMLA[0] + (Math.random()-0.5)*0.03, lng: SHIMLA[1] + (Math.random()-0.5)*0.03 };
+        if (currentUser?.user_id) payload.user_id = parseInt(currentUser.user_id, 10);
+        
+        try {
+            const res = await fetch(`${API_URL}/api/community_report`, {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if(data.success) {
+                document.getElementById("hazardDesc").value = "";
+                stat.textContent = "✅ Report submitted to authorities!";
+                setTimeout(() => stat.textContent = "", 5000);
+                fetchCommunityReports();
+            } else { alert(data.error); }
+        } catch(e) { alert("Network error."); }
+    }
+    
+    async function fetchCommunityReports() {
+        try {
+            const res = await fetch(`${API_URL}/api/community_reports`);
+            const data = await res.json();
+            if (data.reports) {
+                markersComm.forEach(x => { try { mapComm.removeLayer(x); } catch(_) {} });
+                markersComm.length = 0;
+                
+                const icon = L.divIcon({ className: "pin", html: "<span style='background:#d29922;width:14px;height:14px;border-radius:50%;display:block;border:2px solid white'></span>", iconSize: [18, 18] });
+                
+                data.reports.forEach(r => {
+                    const lat = parseFloat(r.latitude), lng = parseFloat(r.longitude);
+                    if (isNaN(lat)||isNaN(lng)) return;
+                    const tooltip = `
+                        <b>${r.report_type}</b><br>${r.description}<br>
+                        <small>Verified by: ${r.verification_count} citizens</small><div style="margin-top:6px;"></div>
+                        <button onclick="verifyReport(${r.report_id})" style="padding:4px 8px;background:var(--accent-amber);color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:600;">I see this too</button>
+                    `;
+                    if(typeof mapComm !== 'undefined' && mapComm) {
+                        const marker = L.marker([lat, lng], { icon }).addTo(mapComm);
+                        marker.bindPopup(tooltip);
+                        markersComm.push(marker);
+                    }
+                    if(typeof map !== 'undefined' && map) {
+                        const m2 = L.marker([lat, lng], { icon }).addTo(map);
+                        m2.bindPopup(tooltip);
+                        markersComm.push(m2); // Store in markersComm to clear on update
+                    }
+                });
+            }
+        } catch(_) {}
+    }
+    
+    async function verifyReport(id) {
+        try {
+            await fetch(`${API_URL}/api/verify_report`, {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({report_id: id})
+            });
+            fetchCommunityReports();
+            alert("Verification recorded. Thank you!");
+        } catch(_) {}
+    }
+
+    // ---------- Dashboard (Agency) ----------
+    async function fetchDashboard() {
+        const role = currentUser?.role_name || "Medical_Response";
+        if (role === "Civilian") return;
+        try {
+            const res = await fetch(`${API_URL}/api/get_dashboard/${role}`);
+            const data = await res.json();
+            const tbody = document.getElementById("tableBody");
+            tbody.innerHTML = "";
+            let cAct = 0, cCrit = 0, cRes = 0;
+
+            (data.emergencies || []).forEach(req => {
+                incidentsData[req.sos_id] = req;
+                const canDispatch = ["Reported", "Pending", "Requires_Dispatch"].includes(req.status);
+                if (req.status !== "Resolved") { 
+                    cAct++; 
+                    if (req.ai_severity_score >= 8) cCrit++; 
+                } else { cRes++; }
+
+                const row = `<tr onclick="showIncidentModal(${req.sos_id})">
+                    <td>#${req.sos_id}</td>
+                    <td>${escapeHtml(req.reporter_name || "Citizen")}</td>
+                    <td>${escapeHtml((req.raw_message || "").slice(0, 40))}${(req.raw_message || "").length > 40 ? "…" : ""}</td>
+                    <td class="${req.ai_severity_score >= 8 ? "critical" : ""}">${req.ai_severity_score}/10</td>
+                    <td>${escapeHtml(req.status || "-")}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+            document.getElementById("kpiActive").textContent = cAct;
+            document.getElementById("kpiCritical").textContent = cCrit;
+            document.getElementById("kpiResolved").textContent = cRes;
+        } catch (_) {}
+    }
+
+    function showIncidentModal(id) {
+        const inc = incidentsData[id];
+        if(!inc) return;
+        activeModalIncidentId = id;
+        document.getElementById("mdlStatus").textContent = inc.status;
+        document.getElementById("mdlName").textContent = inc.reporter_name || "Citizen";
+        document.getElementById("mdlPhone").textContent = inc.reporter_phone || "Hidden";
+        document.getElementById("mdlBlood").textContent = inc.blood_group || "Unknown";
+        document.getElementById("mdlTime").textContent = inc.timestamp ? new Date(inc.timestamp).toLocaleTimeString() : "Just now";
+        document.getElementById("mdlCat").textContent = `${inc.ai_category} (Severity: ${inc.ai_severity_score}/10)`;
+        document.getElementById("mdlMsg").textContent = inc.raw_message || "No description provided.";
+        document.getElementById("mdlDispatchBtn").style.display = (["Reported", "Pending", "Requires_Dispatch"].includes(inc.status)) ? "block" : "none";
+        document.getElementById("incidentModal").style.display = "flex";
+    }
+
+    function closeIncidentModal() {
+        document.getElementById("incidentModal").style.display = "none";
+        activeModalIncidentId = null;
+    }
+
+    async function dispatchRescueMdl() {
+        if(!activeModalIncidentId) return;
+        await dispatchTeam(activeModalIncidentId);
+        closeIncidentModal();
+    }
+
+    async function transferIncidentMdl() {
+        if(!activeModalIncidentId) return;
+        const dept = document.getElementById("mdlTransferDept").value;
+        if(!dept) return alert("Select a department first.");
+        try {
+            const res = await fetch(`${API_URL}/api/transfer_incident`, {
+                method: "PUT", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sos_id: activeModalIncidentId, department: dept })
+            });
+            const data = await res.json();
+            if(data.success) {
+                alert("Transferred to " + dept.replace("_", " "));
+                closeIncidentModal();
+                fetchDashboard();
+            } else { alert("Failed to transfer: " + data.error); }
+        } catch(e) { alert("Network error"); }
+    }
+
+    function escapeHtml(s) {
+        const d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    async function dispatchTeam(sosId) {
+        try {
+            const res = await fetch(`${API_URL}/api/update_status`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sos_id: sosId, status: "Rescue in Progress" })
+            });
+            const data = await res.json();
+            if (data.success) fetchDashboard();
+        } catch (_) {}
+    }
+
+    // ---------- SOS (Civilian) ----------
+    async function sendSOS() {
+        let msg = document.getElementById("sosMessage").value.trim();
+        if (currentThreat !== "General") msg = `[${currentThreat}] ` + msg;
+        if (!msg || msg === `[${currentThreat}] `) return alert("Please specify threat details.");
+        
+        const payload = { message: msg };
+        if (currentUser?.user_id) payload.user_id = parseInt(currentUser.user_id, 10);
+        try {
+            const res = await fetch(`${API_URL}/api/send_sos`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById("sosMessage").value = "";
+                document.getElementById("sosStatus").textContent = `Sent! Routed to ${data.category} (Severity: ${data.severity}/10)`;
+                setTimeout(() => { document.getElementById("sosStatus").textContent = ""; }, 5000);
+                fetchIncidents();
+            } else {
+                alert(data.error || "Failed to send SOS");
+            }
+        } catch (e) {
+            alert("Network error. Is the API running?");
+        }
+    }
+
+    // ---------- Boot ----------
+    if (!loadSession()) {
+        document.getElementById("loginOverlay").style.display = "flex";
+    }
+</script>
+
+</body>
+</html>
