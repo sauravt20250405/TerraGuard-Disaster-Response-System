@@ -156,14 +156,6 @@ try:
 except Exception as e:
     print(f"[WARN] Disaster risk model not found: {e}. Run: python 2_ai_engines/train_disaster_risk.py")
 
-# --- Serve frontend (avoids file:// CORS issues) ---
-@app.route("/")
-def serve_app():
-    return send_from_directory(BASE_DIR, "index.html")
-
-@app.route("/<path:path>")
-def serve_static(path):
-    return send_from_directory(BASE_DIR, path)
 
 # --- DEV MODE: bypass DB when Aiven unreachable (for UI testing) ---
 DEV_MODE = os.getenv("TERRAGUARD_DEV_MODE", "").strip().lower() in ("1", "true", "yes")
@@ -352,6 +344,8 @@ def send_sos():
     data = request.json or {}
     sos_message = (data.get("message") or "").strip()
     user_id = data.get("user_id", 1)
+    lat = data.get("latitude", 31.1048)
+    lng = data.get("longitude", 77.1734)
 
     if not sos_message or not nlp_models:
         return jsonify({"error": "Message empty or AI offline"}), 400
@@ -363,11 +357,13 @@ def send_sos():
         with engine.begin() as conn:
             query = text("""
                 INSERT INTO SOS_Requests (user_id, raw_message, latitude, longitude, ai_severity_score, ai_category, status)
-                VALUES (:uid, :msg, 31.1048, 77.1734, :sev, :cat, 'Reported')
+                VALUES (:uid, :msg, :lat, :lng, :sev, :cat, 'Reported')
             """)
             conn.execute(query, {
                 "uid": user_id,
                 "msg": sos_message,
+                "lat": lat,
+                "lng": lng,
                 "sev": predicted_severity,
                 "cat": predicted_category
             })
@@ -379,8 +375,8 @@ def send_sos():
                 "sos_id": DEV_INCIDENT_ID,
                 "user_id": user_id,
                 "raw_message": sos_message,
-                "latitude": 31.1048,
-                "longitude": 77.1734,
+                "latitude": lat,
+                "longitude": lng,
                 "ai_severity_score": predicted_severity,
                 "ai_category": predicted_category,
                 "status": "Reported",
@@ -643,18 +639,17 @@ def get_weather_risk():
     try:
         with engine.begin() as conn:
             result = conn.execute(
-                text("SELECT temp_c, wind_kph, rainfall_mm, ai_risk_score FROM Weather_Logs ORDER BY log_id DESC LIMIT 1")
+                text("SELECT rainfall_mm, ai_risk_score FROM Weather_Logs ORDER BY log_id DESC LIMIT 1")
             ).fetchone()
             
         # Dynamically scale the risk so it's not a boring 0% for the presentation
         if result:
-            temp_c, wind, rain, db_risk = result
+            rain, db_risk = result
             # Injecting a natural baseline variance so the UI feels alive
             baseline_variance = random.randint(12, 34)
             score = float(db_risk) + baseline_variance
-            # Boost risk artificially if factors are slightly elevated
-            if float(temp_c) > 35: score += 15
-            if float(wind) > 40: score += 20
+            # Boost risk if rainfall is elevated
+            if float(rain) > 50: score += 20
         else:
             score = float(random.randint(15, 30))
             

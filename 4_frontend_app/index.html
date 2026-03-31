@@ -1540,6 +1540,7 @@
             loadVaultDocuments();
             fetchFirstAidInit();
             
+            // Detect live GPS before initializing maps
             await fetchUserLocation();
 
             const isCivilian = currentUser.role_name === "Civilian";
@@ -1550,7 +1551,18 @@
 
             document.getElementById("incidentsTitle").textContent = "Live Incidents – " + (currentUser.role_name || "").replace(/_/g, " ");
             if (isCivilian) showView("dashboard"); else showView("map");
+            
+            // Initialize maps AFTER location is known so they center correctly
             initMaps();
+            
+            // Re-center all maps to detected live GPS position
+            setTimeout(() => {
+                if (map) map.setView(USER_COORDS, 13);
+                if (mapSos) mapSos.setView(USER_COORDS, 13);
+                if (mapIncidents) mapIncidents.setView(USER_COORDS, 13);
+                if (typeof mapComm !== 'undefined' && mapComm) mapComm.setView(USER_COORDS, 13);
+            }, 300);
+            
             fetchRisk();
             fetchIncidents();
             fetchDisasterRisk();
@@ -2085,7 +2097,7 @@
             if (currentThreat !== "General") msg = `[${currentThreat}] ` + msg;
             if (!msg || msg === `[${currentThreat}] `) return alert("Please specify threat details.");
 
-            const payload = { message: msg };
+            const payload = { message: msg, latitude: USER_COORDS[0], longitude: USER_COORDS[1] };
             if (currentUser?.user_id) payload.user_id = parseInt(currentUser.user_id, 10);
             try {
                 const res = await fetch(`${API_URL}/api/send_sos`, {
