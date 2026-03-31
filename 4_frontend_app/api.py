@@ -481,20 +481,18 @@ def get_dashboard(role):
                            s.latitude, s.longitude, s.user_id, u.phone_number
                     FROM SOS_Requests s
                     LEFT JOIN Users u ON s.user_id = u.user_id
-                    WHERE s.ai_category = :role
                     ORDER BY s.ai_severity_score DESC
                 """)
-                sos_df = pd.read_sql(query, conn, params={"role": role})
+                sos_df = pd.read_sql(query, conn)
             except:
                 # Fallback to pure SOS_requests query if Users join fails
                 query = text("""
                     SELECT sos_id, raw_message, ai_severity_score, ai_category, status, timestamp,
                            latitude, longitude, user_id
                     FROM SOS_Requests
-                    WHERE ai_category = :role
-                    ORDER BY s.ai_severity_score DESC
+                    ORDER BY ai_severity_score DESC
                 """)
-                sos_df = pd.read_sql(query, conn, params={"role": role})
+                sos_df = pd.read_sql(query, conn)
 
             try:
                 weather_query = text("SELECT rainfall_mm, ai_risk_score FROM Weather_Logs ORDER BY log_id DESC LIMIT 1")
@@ -517,7 +515,7 @@ def get_dashboard(role):
         })
     except Exception as e:
         if DEV_MODE:
-            filtered = [t for t in DEV_INCIDENTS if t.get("ai_category") == role]
+            filtered = list(DEV_INCIDENTS)
             filtered.sort(key=lambda x: x.get("ai_severity_score", 0), reverse=True)
             for e_ticket in filtered:
                 prof = get_demo_user(e_ticket.get("user_id"))
