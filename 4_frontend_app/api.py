@@ -496,8 +496,11 @@ def get_dashboard(role):
                 """)
                 sos_df = pd.read_sql(query, conn, params={"role": role})
 
-            weather_query = text("SELECT rainfall_mm, ai_risk_score FROM Weather_Logs ORDER BY log_id DESC LIMIT 1")
-            weather_df = pd.read_sql(weather_query, conn)
+            try:
+                weather_query = text("SELECT rainfall_mm, ai_risk_score FROM Weather_Logs ORDER BY log_id DESC LIMIT 1")
+                weather_df = pd.read_sql(weather_query, conn)
+            except:
+                weather_df = pd.DataFrame()
 
         emergencies = sos_df.to_dict(orient="records")
         for e in emergencies:
