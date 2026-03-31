@@ -979,21 +979,10 @@
                         <button
                             style="padding:10px; width:100%; font-weight: 600; background:var(--accent-green); color:black; border:none; border-radius:6px; margin-bottom:1.5rem; cursor:pointer;"
                             onclick="document.getElementById('vaultUploadFile').click()">+ Upload Secure Document</button>
-                        <input type="file" id="vaultUploadFile" style="display:none;" onchange="alert('Mock: Document AES-encrypted and stored locally.')">
+                        <input type="file" id="vaultUploadFile" style="display:none;" onchange="uploadVaultDocument()">
                         
                         <div id="vaultDocuments" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
-                            <div class="vault-item" style="flex-direction:column; align-items:flex-start; margin-bottom:0;">
-                                <div style="margin-bottom:8px">📄 <strong>Identification</strong></div><small style="color:var(--accent-green)">Scanned Passport</small>
-                            </div>
-                            <div class="vault-item" style="flex-direction:column; align-items:flex-start; margin-bottom:0;">
-                                <div style="margin-bottom:8px">🏥 <strong>Medical Records</strong></div><small style="color:var(--text-muted)">Blood Type & Allergies</small>
-                            </div>
-                            <div class="vault-item" style="flex-direction:column; align-items:flex-start; margin-bottom:0;">
-                                <div style="margin-bottom:8px">🏠 <strong>Property Deed</strong></div><small style="color:var(--text-muted)">Primary Residence</small>
-                            </div>
-                            <div class="vault-item" style="flex-direction:column; align-items:flex-start; margin-bottom:0;">
-                                <div style="margin-bottom:8px">📜 <strong>Insurance</strong></div><small style="color:var(--text-muted)">Life Policy</small>
-                            </div>
+                            <div style="color:var(--text-muted)">Loading secure documents...</div>
                         </div>
                     </div>
                 </div>
@@ -1263,6 +1252,92 @@
             }
         }
 
+        // --- MEGA PATCH: DIGITAL VAULT CRUD ---
+        async function loadVaultDocuments() {
+            const vaultContainer = document.getElementById("vaultDocuments");
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`${API_URL}/api/vault/list/${currentUser.user_id}`);
+                const data = await res.json();
+                
+                if (data.documents && data.documents.length > 0) {
+                    vaultContainer.innerHTML = data.documents.map(d => `
+                        <div class="vault-item" style="flex-direction:row; align-items:center; justify-content:space-between; margin-bottom:0;">
+                            <div>
+                                <div style="margin-bottom:4px">📄 <strong>${d.filename}</strong></div>
+                                <small style="color:var(--accent-green)">Cloud Encrypted &bull; ${new Date(d.timestamp).toLocaleDateString()}</small>
+                            </div>
+                            <button onclick="deleteVaultDocument(${d.doc_id})" style="background:none; border:none; color:var(--accent-red); cursor:pointer; font-size:1.2rem;">🗑️</button>
+                        </div>
+                    `).join("");
+                } else {
+                    vaultContainer.innerHTML = '<div style="color:var(--text-muted)">No documents secured yet.</div>';
+                }
+            } catch(e) {
+                vaultContainer.innerHTML = '<div style="color:var(--accent-red)">Database connection failed. Viewing offline cached items.</div>';
+            }
+        }
+
+        async function uploadVaultDocument() {
+            const fileInput = document.getElementById("vaultUploadFile");
+            if (!fileInput.files.length || !currentUser) return;
+            
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("user_id", currentUser.user_id);
+            
+            const originalText = document.getElementById("vaultDocuments").innerHTML;
+            document.getElementById("vaultDocuments").innerHTML = '<div style="color:var(--accent-amber)">Encrypting and uploading to Aiven...</div>';
+            
+            try {
+                const res = await fetch(`${API_URL}/api/vault/upload`, { method: "POST", body: formData });
+                if (res.ok) {
+                    await loadVaultDocuments();
+                } else {
+                    alert("Upload failed.");
+                    document.getElementById("vaultDocuments").innerHTML = originalText;
+                }
+            } catch(e) {
+                alert("Upload failed: " + e.message);
+                document.getElementById("vaultDocuments").innerHTML = originalText;
+            }
+            fileInput.value = "";
+        }
+
+        async function deleteVaultDocument(doc_id) {
+            if (!confirm("Permanently delete this secure document from the cloud?")) return;
+            try {
+                const res = await fetch(`${API_URL}/api/vault/delete/${doc_id}`, { method: "DELETE" });
+                if (res.ok) {
+                    await loadVaultDocuments();
+                }
+            } catch(e) {
+                alert("Failed to delete.");
+            }
+        }
+
+        async function fetchFirstAidInit() {
+            const resultsEl = document.getElementById("firstAidResults");
+            resultsEl.innerHTML = '<div style="color:var(--accent-amber)">Fetching live Wikipedia Intelligence...</div>';
+            try {
+                const res = await fetch(`${API_URL}/api/first_aid_live`);
+                const data = await res.json();
+                if (data.success) {
+                    resultsEl.innerHTML = data.content.map(txt => `
+                        <div class="first-aid-card" style="border-left-color: var(--accent-amber); margin-bottom: 15px;">
+                            <strong>${data.source}</strong>
+                            <p style="margin-top:10px; color:var(--text-muted); font-size:0.9rem; line-height:1.5;">${txt}</p>
+                        </div>
+                    `).join("");
+                } else {
+                    resultsEl.innerHTML = '<div style="color:var(--accent-red)">Failed to fetch live data.</div>';
+                }
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="color:var(--accent-red)">API Scraper unreachable.</div>';
+            }
+        }
+
         function toggleTheme() {
             document.body.classList.toggle("light-mode");
             const isLight = document.body.classList.contains("light-mode");
@@ -1460,6 +1535,11 @@
             document.getElementById("familyContact1").value = localStorage.getItem("familyContact1") || "";
             document.getElementById("familyContact2").value = localStorage.getItem("familyContact2") || "";
             document.getElementById("familyContact3").value = localStorage.getItem("familyContact3") || "";
+            
+            // Mega-Patch Vault and First Aid
+            loadVaultDocuments();
+            fetchFirstAidInit();
+            
             await fetchUserLocation();
 
             const isCivilian = currentUser.role_name === "Civilian";

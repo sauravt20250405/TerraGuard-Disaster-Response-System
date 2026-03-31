@@ -106,6 +106,16 @@ def get_engine():
                 FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
             )
         '''))
+        conn.execute(text(f'''
+            CREATE TABLE IF NOT EXISTS Digital_Vault (
+                doc_id INTEGER PRIMARY KEY {ai_str},
+                user_id INTEGER,
+                filename VARCHAR(255) NOT NULL,
+                filepath TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+            )
+        '''))
         
         roles = conn.execute(text("SELECT COUNT(*) FROM Roles")).scalar()
         if roles == 0:
@@ -725,6 +735,107 @@ def verify_report():
                 r["verification_count"] += 1
                 return jsonify({"success": True, "fallback": True})
         return jsonify({"error": "Report not found in memory"}), 404
+
+# ==========================================
+# API: DIGITAL VAULT
+# ==========================================
+import uuid
+import werkzeug.utils
+
+UPLOAD_FOLDER = os.path.join(PROJECT_ROOT, 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route("/api/vault/upload", methods=["POST"])
+def upload_vault_document():
+    user_id = request.form.get("user_id")
+    if 'file' not in request.files or not user_id:
+        return jsonify({"error": "Missing file or user_id"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+        
+    filename = werkzeug.utils.secure_filename(file.filename)
+    unique_filename = f"{uuid.uuid4().hex}_{filename}"
+    filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+    file.save(filepath)
+    
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO Digital_Vault (user_id, filename, filepath) VALUES (:uid, :fname, :fpath)"),
+                {"uid": user_id, "fname": filename, "fpath": unique_filename}
+            )
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/vault/list/<int:user_id>", methods=["GET"])
+def list_vault_documents(user_id):
+    try:
+        with engine.begin() as conn:
+            docs = conn.execute(
+                text("SELECT doc_id, filename, timestamp FROM Digital_Vault WHERE user_id = :uid ORDER BY timestamp DESC"),
+                {"uid": user_id}
+            ).fetchall()
+        
+        doc_list = [{"doc_id": d.doc_id, "filename": d.filename, "timestamp": str(d.timestamp)} for d in docs]
+        return jsonify({"documents": doc_list})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/vault/delete/<int:doc_id>", methods=["DELETE"])
+def delete_vault_document(doc_id):
+    try:
+        with engine.begin() as conn:
+            doc = conn.execute(text("SELECT filepath FROM Digital_Vault WHERE doc_id = :did"), {"did": doc_id}).fetchone()
+            if doc:
+                try:
+                    os.remove(os.path.join(UPLOAD_FOLDER, doc.filepath))
+                except:
+                    pass
+                conn.execute(text("DELETE FROM Digital_Vault WHERE doc_id = :did"), {"did": doc_id})
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ==========================================
+# API: FIRST AID LIVE WEB SCRAPING
+# ==========================================
+import requests
+import re
+
+@app.route("/api/first_aid_live", methods=["GET"])
+def get_first_aid_live():
+    """Scrapes official live emergency guidelines from Wikipedia to show active extraction."""
+    try:
+        res = requests.get("https://en.wikipedia.org/wiki/First_aid")
+        res.raise_for_status()
+        
+        # Simple regex extraction of paragraph texts
+        paragraphs = re.findall(r'<p>(.*?)</p>', res.text, re.IGNORECASE | re.DOTALL)
+        
+        clean_facts = []
+        for p in paragraphs:
+            # Strip remaining HTML tags natively
+            clean_text = re.sub(r'<[^>]+>', '', p).strip()
+            # Clean wikipedia citations e.g., [1]
+            clean_text = re.sub(r'\[\d+\]', '', clean_text)
+            if len(clean_text) > 120 and "first aid" in clean_text.lower():
+                clean_facts.append(clean_text)
+                if len(clean_facts) >= 3:
+                    break
+        
+        if not clean_facts:
+            clean_facts = ["First aid is the first and immediate assistance given to any person suffering from either a minor or serious illness or injury."]
+            
+        return jsonify({
+            "success": True, 
+            "content": clean_facts, 
+            "source": "Wikipedia Commons (Live Search)",
+            "timestamp": pd.Timestamp.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == "__main__":
     app.run(port=5000, debug=True)
