@@ -56,12 +56,12 @@ def get_engine():
         db_uri = f"mysql+pymysql://{user}:{pw}@{host}:{port}/{dbname}"
         ssl_args = {"ssl": {"ca": os.path.join(BASE_DIR, "ca.pem")}}
         try:
-            # Test connection first to see if Aiven IP is blocked
+            # Force actual DB socket connection to see if Aiven IP is blocked
             engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
             with engine.connect() as conn:
-                pass 
+                conn.execute(text("SELECT 1"))
         except Exception as e:
-            print(f"WARN: Aiven MySQL fully rejected connection (1045 or SSL). Falling back to Cloud SQLite: {e}")
+            print(f"WARN: Aiven MySQL fully rejected connection (1045/SSL). Falling back: {e}")
             engine = None
             
     if engine is None:
