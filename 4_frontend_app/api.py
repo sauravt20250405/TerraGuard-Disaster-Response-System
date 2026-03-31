@@ -123,6 +123,8 @@ def get_engine():
                 user_id INTEGER,
                 filename VARCHAR(255) NOT NULL,
                 filepath TEXT NOT NULL,
+                file_data MEDIUMTEXT,
+                file_type VARCHAR(100) DEFAULT 'application/octet-stream',
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
             )
@@ -763,14 +765,23 @@ def upload_vault_document():
         
     filename = werkzeug.utils.secure_filename(file.filename)
     unique_filename = f"{uuid.uuid4().hex}_{filename}"
+    
+    # Read file content and encode as base64 for DB storage
+    import base64
+    file_bytes = file.read()
+    file_b64 = base64.b64encode(file_bytes).decode('utf-8')
+    file_type = file.content_type or 'application/octet-stream'
+    
+    # Also save to disk as backup
     filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
-    file.save(filepath)
+    with open(filepath, 'wb') as f:
+        f.write(file_bytes)
     
     try:
         with engine.begin() as conn:
             conn.execute(
-                text("INSERT INTO Digital_Vault (user_id, filename, filepath) VALUES (:uid, :fname, :fpath)"),
-                {"uid": user_id, "fname": filename, "fpath": unique_filename}
+                text("INSERT INTO Digital_Vault (user_id, filename, filepath, file_data, file_type) VALUES (:uid, :fname, :fpath, :fdata, :ftype)"),
+                {"uid": user_id, "fname": filename, "fpath": unique_filename, "fdata": file_b64, "ftype": file_type}
             )
         return jsonify({"success": True})
     except Exception as e:
@@ -781,11 +792,18 @@ def list_vault_documents(user_id):
     try:
         with engine.begin() as conn:
             docs = conn.execute(
-                text("SELECT doc_id, filename, timestamp FROM Digital_Vault WHERE user_id = :uid ORDER BY timestamp DESC"),
+                text("SELECT doc_id, filename, file_type, timestamp FROM Digital_Vault WHERE user_id = :uid ORDER BY timestamp DESC"),
                 {"uid": user_id}
             ).fetchall()
         
-        doc_list = [{"doc_id": d.doc_id, "filename": d.filename, "timestamp": str(d.timestamp)} for d in docs]
+        doc_list = []
+        for d in docs:
+            item = {"doc_id": d.doc_id, "filename": d.filename, "timestamp": str(d.timestamp)}
+            try:
+                item["file_type"] = d.file_type or "application/octet-stream"
+            except:
+                item["file_type"] = "application/octet-stream"
+            doc_list.append(item)
         return jsonify({"documents": doc_list})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -802,6 +820,39 @@ def delete_vault_document(doc_id):
                     pass
                 conn.execute(text("DELETE FROM Digital_Vault WHERE doc_id = :did"), {"did": doc_id})
         return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/vault/download/<int:doc_id>", methods=["GET"])
+def download_vault_document(doc_id):
+    """Serve a vault document for viewing/download. Reads from DB base64 or falls back to disk."""
+    import base64
+    from flask import Response
+    try:
+        with engine.begin() as conn:
+            doc = conn.execute(
+                text("SELECT filename, filepath, file_data, file_type FROM Digital_Vault WHERE doc_id = :did"),
+                {"did": doc_id}
+            ).fetchone()
+        
+        if not doc:
+            return jsonify({"error": "Document not found"}), 404
+        
+        # Try serving from DB base64 first
+        if doc.file_data:
+            file_bytes = base64.b64decode(doc.file_data)
+            return Response(
+                file_bytes,
+                mimetype=doc.file_type or 'application/octet-stream',
+                headers={"Content-Disposition": f"inline; filename={doc.filename}"}
+            )
+        
+        # Fallback to disk
+        disk_path = os.path.join(UPLOAD_FOLDER, doc.filepath)
+        if os.path.exists(disk_path):
+            return send_from_directory(UPLOAD_FOLDER, doc.filepath, as_attachment=False)
+        
+        return jsonify({"error": "File data not available"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

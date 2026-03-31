@@ -1265,9 +1265,12 @@
                         <div class="vault-item" style="flex-direction:row; align-items:center; justify-content:space-between; margin-bottom:0;">
                             <div>
                                 <div style="margin-bottom:4px">📄 <strong>${d.filename}</strong></div>
-                                <small style="color:var(--accent-green)">Cloud Encrypted &bull; ${new Date(d.timestamp).toLocaleDateString()}</small>
+                                <small style="color:var(--accent-green)">Cloud Encrypted &bull; ${new Date(d.timestamp).toLocaleDateString()} &bull; ${d.file_type || 'file'}</small>
                             </div>
-                            <button onclick="deleteVaultDocument(${d.doc_id})" style="background:none; border:none; color:var(--accent-red); cursor:pointer; font-size:1.2rem;">🗑️</button>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <a href="${API_URL}/api/vault/download/${d.doc_id}" target="_blank" style="background:none; border:1px solid var(--accent-green); color:var(--accent-green); cursor:pointer; font-size:0.8rem; padding:4px 10px; border-radius:4px; text-decoration:none;">📥 View</a>
+                                <button onclick="deleteVaultDocument(${d.doc_id})" style="background:none; border:none; color:var(--accent-red); cursor:pointer; font-size:1.2rem;">🗑️</button>
+                            </div>
                         </div>
                     `).join("");
                 } else {
