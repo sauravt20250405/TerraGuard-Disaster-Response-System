@@ -86,6 +86,11 @@ def get_engine():
                 phone_number VARCHAR(15) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
                 role_id INTEGER,
+                blood_group VARCHAR(10) DEFAULT 'Unknown',
+                medical_conditions TEXT DEFAULT '',
+                emergency_contact VARCHAR(15) DEFAULT '',
+                address TEXT DEFAULT '',
+                age INTEGER DEFAULT 0,
                 FOREIGN KEY (role_id) REFERENCES Roles(role_id) ON DELETE SET NULL
             )
         '''))
@@ -137,6 +142,19 @@ def get_engine():
             default_pw = generate_password_hash("test123")
             conn.execute(text("INSERT INTO Users (name, phone_number, password_hash, role_id) VALUES ('Default NDRF', '1234567890', :pw, 4)"), {"pw": default_pw})
             conn.execute(text("INSERT INTO Users (name, phone_number, password_hash, role_id) VALUES ('Police HQ', '0987654321', :pw, 3)"), {"pw": default_pw})
+        
+        # --- Schema Migration: Add new columns to existing tables ---
+        for col, col_def in [("blood_group", "VARCHAR(10) DEFAULT 'Unknown'"), ("medical_conditions", "TEXT DEFAULT ''"),
+                             ("emergency_contact", "VARCHAR(15) DEFAULT ''"), ("address", "TEXT DEFAULT ''"), ("age", "INTEGER DEFAULT 0")]:
+            try:
+                conn.execute(text(f"ALTER TABLE Users ADD COLUMN {col} {col_def}"))
+            except:
+                pass  # Column already exists
+        for col, col_def in [("file_data", "MEDIUMTEXT"), ("file_type", "VARCHAR(100) DEFAULT 'application/octet-stream'")]:
+            try:
+                conn.execute(text(f"ALTER TABLE Digital_Vault ADD COLUMN {col} {col_def}"))
+            except:
+                pass
             
     return engine
 
@@ -236,6 +254,51 @@ def login():
         if DEV_MODE and phone_number in DEMO_USERS and password == DEMO_PASSWORD:
             u = DEMO_USERS[phone_number]
             return jsonify({"success": True, "user_id": u["user_id"], "role_id": u["role_id"], "role_name": u["role_name"]})
+        return jsonify({"error": str(e)}), 500
+
+# ==========================================
+# API: USER PROFILE (Disaster-Ready Profile)
+# ==========================================
+@app.route("/api/profile/<int:user_id>", methods=["GET"])
+def get_profile(user_id):
+    """Fetch full disaster-response profile for a user."""
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("""SELECT u.user_id, u.name, u.phone_number, u.role_id, r.role_name,
+                        u.blood_group, u.medical_conditions, u.emergency_contact, u.address, u.age
+                     FROM Users u LEFT JOIN Roles r ON u.role_id = r.role_id
+                     WHERE u.user_id = :uid"""),
+                {"uid": user_id}
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({
+            "user_id": row.user_id, "name": row.name, "phone_number": row.phone_number,
+            "role_name": row.role_name or "Civilian", "blood_group": row.blood_group or "Unknown",
+            "medical_conditions": row.medical_conditions or "", "emergency_contact": row.emergency_contact or "",
+            "address": row.address or "", "age": row.age or 0
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/profile/<int:user_id>", methods=["PUT"])
+def update_profile(user_id):
+    """Update disaster-response profile fields."""
+    data = request.json or {}
+    fields = []
+    params = {"uid": user_id}
+    for field in ["blood_group", "medical_conditions", "emergency_contact", "address", "age", "name"]:
+        if field in data:
+            fields.append(f"{field} = :{field}")
+            params[field] = data[field]
+    if not fields:
+        return jsonify({"error": "No fields to update"}), 400
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f"UPDATE Users SET {', '.join(fields)} WHERE user_id = :uid"), params)
+        return jsonify({"success": True})
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 import time

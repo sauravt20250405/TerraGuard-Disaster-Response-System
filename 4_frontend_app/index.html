@@ -872,6 +872,8 @@
                     data-i18n="nav_vault">🗄️ Digital Vault</button>
                 <button id="navFirstAid" class="civ-nav" onclick="showView('firstAid')" style="display:none"
                     data-i18n="nav_firstaid">⚕️ First Aid Guide</button>
+                <button id="navProfile" onclick="showView('profile')" style="display:none"
+                    >👤 My Profile</button>
                 <button id="navIncidents" class="agency-nav" onclick="showView('incidents')" style="display:none"
                     data-i18n="nav_incidents">📋 Live Incidents</button>
             </nav>
@@ -923,6 +925,59 @@
 
                         <button class="checkin-btn" onclick="sendFamilyCheckin()">📍 I AM SAFE (Send Broadcast)</button>
                         <p id="checkinStatus" style="color:var(--accent-amber); margin-top: 10px; font-weight: 600; font-size: 0.95rem;"></p>
+                    </div>
+                </div>
+
+                <!-- User Profile (Disaster-Ready) -->
+                <div id="viewProfile" class="view">
+                    <div class="panel" style="border: 2px solid var(--accent-green);">
+                        <h3 style="color: var(--accent-green); margin-bottom: 1.5rem;">👤 Disaster-Ready Profile</h3>
+                        <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.5rem;">Complete your emergency profile so first responders have critical information during a rescue operation.</p>
+                        
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group">
+                                <label style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">Full Name</label>
+                                <input type="text" id="profileName" placeholder="Your full name" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; color:var(--text);">
+                            </div>
+                            <div class="form-group">
+                                <label style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">Age</label>
+                                <input type="number" id="profileAge" placeholder="25" min="1" max="120" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; color:var(--text);">
+                            </div>
+                            <div class="form-group">
+                                <label style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">🩸 Blood Group</label>
+                                <select id="profileBlood" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; color:var(--text);">
+                                    <option value="Unknown">Select Blood Group</option>
+                                    <option value="A+">A+</option><option value="A-">A-</option>
+                                    <option value="B+">B+</option><option value="B-">B-</option>
+                                    <option value="AB+">AB+</option><option value="AB-">AB-</option>
+                                    <option value="O+">O+</option><option value="O-">O-</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">📞 Emergency Contact</label>
+                                <input type="text" id="profileEmergencyContact" placeholder="+91-XXXXXXXXXX" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; color:var(--text);">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" style="margin-top:12px;">
+                            <label style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">🏠 Home Address / Last Known Location</label>
+                            <input type="text" id="profileAddress" placeholder="House No., Street, City, State" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; color:var(--text);">
+                        </div>
+                        
+                        <div class="form-group" style="margin-top:12px;">
+                            <label style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px;">⚕️ Medical Conditions / Allergies</label>
+                            <textarea id="profileMedical" placeholder="E.g., Diabetic, Asthmatic, Allergic to Penicillin..." rows="3" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; color:var(--text); resize:vertical;"></textarea>
+                        </div>
+                        
+                        <button onclick="saveProfile()" style="width:100%; margin-top:1.5rem; padding:14px; background:var(--accent-green); color:#000; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:1rem; text-transform:uppercase; letter-spacing:1px;">💾 Save Disaster-Ready Profile</button>
+                        <p id="profileStatus" style="color:var(--accent-green); margin-top:10px; font-weight:600; text-align:center;"></p>
+                        
+                        <div style="margin-top:2rem; padding:15px; background:rgba(34,197,94,0.05); border:1px dashed var(--accent-green); border-radius:8px;">
+                            <small style="color:var(--text-muted); line-height:1.6;">
+                                <strong style="color:var(--accent-green);">Why is this important?</strong><br>
+                                During an active SOS rescue, first responders receive your blood group, medical conditions, and emergency contact directly on their Command Center dashboard. This data can save critical minutes during a medical emergency.
+                            </small>
+                        </div>
                     </div>
                 </div>
 
@@ -1551,6 +1606,9 @@
 
             document.querySelectorAll('.civ-nav').forEach(el => el.style.display = isCivilian ? "block" : "none");
             document.querySelectorAll('.agency-nav').forEach(el => el.style.display = isCivilian ? "none" : "block");
+            // Profile button visible for ALL roles
+            document.getElementById("navProfile").style.display = "block";
+            loadProfile();
 
             document.getElementById("incidentsTitle").textContent = "Live Incidents – " + (currentUser.role_name || "").replace(/_/g, " ");
             if (isCivilian) showView("dashboard"); else showView("map");
@@ -2092,6 +2150,52 @@
                 const data = await res.json();
                 if (data.success) fetchDashboard();
             } catch (_) { }
+        }
+        // ---------- Profile (Disaster-Ready) ----------
+        async function loadProfile() {
+            if (!currentUser?.user_id) return;
+            try {
+                const res = await fetch(`${API_URL}/api/profile/${currentUser.user_id}`);
+                const data = await res.json();
+                if (data.error) return;
+                document.getElementById("profileName").value = data.name || "";
+                document.getElementById("profileAge").value = data.age || "";
+                document.getElementById("profileBlood").value = data.blood_group || "Unknown";
+                document.getElementById("profileEmergencyContact").value = data.emergency_contact || "";
+                document.getElementById("profileAddress").value = data.address || "";
+                document.getElementById("profileMedical").value = data.medical_conditions || "";
+            } catch(e) { console.warn("Profile load failed:", e); }
+        }
+
+        async function saveProfile() {
+            if (!currentUser?.user_id) return;
+            const payload = {
+                name: document.getElementById("profileName").value.trim(),
+                age: parseInt(document.getElementById("profileAge").value) || 0,
+                blood_group: document.getElementById("profileBlood").value,
+                emergency_contact: document.getElementById("profileEmergencyContact").value.trim(),
+                address: document.getElementById("profileAddress").value.trim(),
+                medical_conditions: document.getElementById("profileMedical").value.trim()
+            };
+            try {
+                const res = await fetch(`${API_URL}/api/profile/${currentUser.user_id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                const statusEl = document.getElementById("profileStatus");
+                if (data.success) {
+                    statusEl.textContent = "✅ Disaster-Ready Profile saved to Cloud DB!";
+                    statusEl.style.color = "var(--accent-green)";
+                } else {
+                    statusEl.textContent = "❌ " + (data.error || "Save failed");
+                    statusEl.style.color = "var(--accent-red)";
+                }
+                setTimeout(() => { statusEl.textContent = ""; }, 4000);
+            } catch(e) {
+                document.getElementById("profileStatus").textContent = "Network error.";
+            }
         }
 
         // ---------- SOS (Civilian) ----------
