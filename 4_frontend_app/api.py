@@ -53,11 +53,13 @@ def get_engine():
     
     if host:
         db_uri = f"mysql+pymysql://{user}:{pw}@{host}:{port}/{dbname}"
+        ssl_args = {"ssl": {"ca": os.path.join(BASE_DIR, "ca.pem")}}
     else:
         db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
         db_uri = f"sqlite:///{db_path}"
+        ssl_args = {}
         
-    engine = create_engine(db_uri, pool_pre_ping=True)
+    engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
     is_sqlite = "sqlite" in db_uri
     ai_str = "AUTOINCREMENT" if is_sqlite else "AUTO_INCREMENT"
     

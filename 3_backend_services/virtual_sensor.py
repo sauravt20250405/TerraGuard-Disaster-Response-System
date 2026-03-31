@@ -20,11 +20,13 @@ host = os.getenv("DB_HOST", "")
 if host:
     pw = urllib.parse.quote_plus(os.getenv("DB_PASSWORD", ""))
     db_uri = f"mysql+pymysql://{os.getenv('DB_USER')}:{pw}@{host}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+    ssl_args = {"ssl": {"ca": os.path.join(BASE_DIR, "..", "4_frontend_app", "ca.pem")}}
 else:
     db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
     db_uri = f"sqlite:///{db_path}"
+    ssl_args = {}
 
-engine = create_engine(db_uri, pool_pre_ping=True)
+engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
 is_sqlite = "sqlite" in db_uri
 ai_str = "AUTOINCREMENT" if is_sqlite else "AUTO_INCREMENT"
 
