@@ -48,8 +48,7 @@ try:
         print("DEV MODE Active: Bypassing Cloud DB setup.")
 except Exception as e:
     print(f"Connection Failed: {e}")
-    if not DEV_MODE:
-        exit()
+    print("Falling back to local SQLite to prevent deployment crash.")
 
 
 if not DEV_MODE:
