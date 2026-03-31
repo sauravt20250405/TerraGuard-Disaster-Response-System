@@ -1131,7 +1131,7 @@
                 </div>
 
                 <div style="border-top:1px solid var(--border); padding-top:20px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
-                    <button class="dispatch-btn" style="flex:1; min-width: 140px; padding:15px; font-size:1rem; text-transform:uppercase; letter-spacing:1px;" id="mdlDispatchBtn">⛑️ Dispatch Responder</button>
+                    <button class="dispatch-btn" style="flex:1; min-width: 140px; padding:15px; font-size:1rem; text-transform:uppercase; letter-spacing:1px;" id="mdlDispatchBtn" onclick="dispatchRescueMdl()">⛑️ Dispatch Responder</button>
                     <button class="dispatch-btn" style="flex:1; background:transparent; border:1px solid var(--accent-green); color:var(--accent-green); min-width: 120px; padding:15px; font-size:1rem; text-transform:uppercase;" id="mdlCallVictimBtn" onclick="window.location.href='tel:' + document.getElementById('mdlPhone').innerText">📞 Direct Dial</button>
                 </div>
                 
@@ -1141,9 +1141,9 @@
                         <option value="Police_Response">Police Dept</option>
                         <option value="Fire_Response">Fire Dept</option>
                         <option value="Medical_Response">Medical / EMS</option>
-                        <option value="NDRF">NDRF HQ</option>
+                        <option value="NDRF_Rescue">NDRF HQ</option>
                     </select>
-                    <button class="dispatch-btn" style="background:var(--bg-elevated); border:1px solid var(--border); padding:12px 20px;" id="mdlTransferBtn">Execute Transfer</button>
+                    <button class="dispatch-btn" style="background:var(--bg-elevated); border:1px solid var(--border); padding:12px 20px;" id="mdlTransferBtn" onclick="transferIncidentMdl()">Execute Transfer</button>
                 </div>
 
                 <button style="width:100%; margin-top:20px; padding:12px; background:transparent; color:var(--text-muted); border:none; cursor:pointer; text-transform:uppercase; letter-spacing:1px; font-size:0.8rem;" onclick="closeIncidentModal()">Close Panel [ESC]</button>
