@@ -51,15 +51,24 @@ def get_engine():
     pw = urllib.parse.quote_plus(os.getenv("DB_PASSWORD", "")) if host else ""
     dbname = os.getenv("DB_NAME", "")
     
+    engine = None
     if host:
         db_uri = f"mysql+pymysql://{user}:{pw}@{host}:{port}/{dbname}"
         ssl_args = {"ssl": {"ca": os.path.join(BASE_DIR, "ca.pem")}}
-    else:
+        try:
+            # Test connection first to see if Aiven IP is blocked
+            engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
+            with engine.connect() as conn:
+                pass 
+        except Exception as e:
+            print(f"WARN: Aiven MySQL fully rejected connection (1045 or SSL). Falling back to Cloud SQLite: {e}")
+            engine = None
+            
+    if engine is None:
         db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
         db_uri = f"sqlite:///{db_path}"
-        ssl_args = {}
+        engine = create_engine(db_uri, pool_pre_ping=True)
         
-    engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
     is_sqlite = "sqlite" in db_uri
     ai_str = "AUTOINCREMENT" if is_sqlite else "AUTO_INCREMENT"
     
