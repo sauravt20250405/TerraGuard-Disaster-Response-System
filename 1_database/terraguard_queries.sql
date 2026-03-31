@@ -1,9 +1,9 @@
 -- ============================================================
 -- TerraGuard Disaster Response System
 -- MySQL Workbench Queries for Presentation & Data Verification
--- Connect to: sqlite:///terraguard_prod.db (local)
--- or MySQL: mysql-21c4f3b9-project-e68.b.aivencloud.com:20095
 -- ============================================================
+
+USE defaultdb;
 
 -- 1. VIEW ALL REGISTERED USERS (Disaster-Ready Profiles)
 SELECT 
@@ -19,6 +19,7 @@ SELECT
 FROM Users u
 LEFT JOIN Roles r ON u.role_id = r.role_id
 ORDER BY u.user_id;
+
 
 -- 2. VIEW ALL ACTIVE SOS EMERGENCIES (Command Center Feed)
 SELECT 

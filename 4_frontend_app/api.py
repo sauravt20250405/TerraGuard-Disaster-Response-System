@@ -539,7 +539,8 @@ def get_dashboard(role):
                 # Try querying with User table if it exists
                 query = text("""
                     SELECT s.sos_id, s.raw_message, s.ai_severity_score, s.ai_category, s.status, s.timestamp,
-                           s.latitude, s.longitude, s.user_id, u.phone_number
+                           s.latitude, s.longitude, s.user_id, u.name AS reporter_name, u.phone_number AS reporter_phone,
+                           u.blood_group, u.medical_conditions, u.emergency_contact, u.address, u.age
                     FROM SOS_Requests s
                     LEFT JOIN Users u ON s.user_id = u.user_id
                     ORDER BY s.ai_severity_score DESC
@@ -562,11 +563,17 @@ def get_dashboard(role):
                 weather_df = pd.DataFrame()
 
         emergencies = sos_df.to_dict(orient="records")
+        # Ensure fallback for fields if not in DB
         for e in emergencies:
-            prof = get_demo_user(e.get("phone_number") or e.get("user_id"))
-            e["reporter_name"] = prof["name"]
-            e["reporter_phone"] = prof["phone"]
-            e["blood_group"] = prof["blood_group"]
+            if not e.get("reporter_name"):
+                prof = get_demo_user(e.get("phone_number") or e.get("user_id"))
+                e["reporter_name"] = prof["name"]
+                e["reporter_phone"] = prof["phone"]
+                e["blood_group"] = prof["blood_group"]
+            e["medical_conditions"] = e.get("medical_conditions") or "None declared"
+            e["emergency_contact"] = e.get("emergency_contact") or "N/A"
+            e["address"] = e.get("address") or "No address on file"
+            e["age"] = e.get("age") or "Unknown"
             
         weather = weather_df.to_dict(orient="records")[0] if not weather_df.empty else None
 
