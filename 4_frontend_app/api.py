@@ -44,19 +44,33 @@ def serve_static_files(path):
 
 # --- CLOUD CONNECTION (All credentials from .env) ---
 def get_engine():
-    db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
-    engine = create_engine(f"sqlite:///{db_path}")
+    import urllib.parse
+    host = os.getenv("DB_HOST", "")
+    port = os.getenv("DB_PORT", "")
+    user = os.getenv("DB_USER", "")
+    pw = urllib.parse.quote_plus(os.getenv("DB_PASSWORD", "")) if host else ""
+    dbname = os.getenv("DB_NAME", "")
+    
+    if host:
+        db_uri = f"mysql+pymysql://{user}:{pw}@{host}:{port}/{dbname}"
+    else:
+        db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
+        db_uri = f"sqlite:///{db_path}"
+        
+    engine = create_engine(db_uri, pool_pre_ping=True)
+    is_sqlite = "sqlite" in db_uri
+    ai_str = "AUTOINCREMENT" if is_sqlite else "AUTO_INCREMENT"
     
     with engine.begin() as conn:
-        conn.execute(text('''
+        conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS Roles (
-                role_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role_id INTEGER PRIMARY KEY {ai_str},
                 role_name VARCHAR(50) UNIQUE NOT NULL
             )
         '''))
-        conn.execute(text('''
+        conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS Users (
-                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER PRIMARY KEY {ai_str},
                 name VARCHAR(100) NOT NULL,
                 phone_number VARCHAR(15) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
@@ -64,9 +78,9 @@ def get_engine():
                 FOREIGN KEY (role_id) REFERENCES Roles(role_id) ON DELETE SET NULL
             )
         '''))
-        conn.execute(text('''
+        conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS SOS_Requests (
-                sos_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sos_id INTEGER PRIMARY KEY {ai_str},
                 user_id INTEGER,
                 raw_message TEXT NOT NULL,
                 latitude DECIMAL(10, 8),
@@ -78,9 +92,9 @@ def get_engine():
                 FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
             )
         '''))
-        conn.execute(text('''
+        conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS Community_Reports (
-                report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER PRIMARY KEY {ai_str},
                 user_id INTEGER,
                 report_type VARCHAR(50),
                 description TEXT NOT NULL,

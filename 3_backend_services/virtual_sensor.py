@@ -14,16 +14,26 @@ load_dotenv(_env_path)
 
 DEV_MODE = os.getenv("TERRAGUARD_DEV_MODE", "").strip().lower() in ("1", "true", "yes")
 
-# Local SQLite Engine for Production Offline Mode
-db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
-engine = create_engine(f"sqlite:///{db_path}")
+# --- CLOUD DB CONNECTION ---
+import urllib.parse
+host = os.getenv("DB_HOST", "")
+if host:
+    pw = urllib.parse.quote_plus(os.getenv("DB_PASSWORD", ""))
+    db_uri = f"mysql+pymysql://{os.getenv('DB_USER')}:{pw}@{host}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+else:
+    db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
+    db_uri = f"sqlite:///{db_path}"
+
+engine = create_engine(db_uri, pool_pre_ping=True)
+is_sqlite = "sqlite" in db_uri
+ai_str = "AUTOINCREMENT" if is_sqlite else "AUTO_INCREMENT"
 
 try:
     if not DEV_MODE:
         with engine.begin() as conn:
-            conn.execute(text('''
+            conn.execute(text(f'''
                 CREATE TABLE IF NOT EXISTS Weather_Logs (
-                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    log_id INTEGER PRIMARY KEY {ai_str},
                     zone_id INTEGER,
                     rainfall_mm FLOAT,
                     soil_moisture_percent FLOAT,
