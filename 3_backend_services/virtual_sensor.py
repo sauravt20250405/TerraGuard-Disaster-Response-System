@@ -15,19 +15,28 @@ load_dotenv(_env_path)
 DEV_MODE = os.getenv("TERRAGUARD_DEV_MODE", "").strip().lower() in ("1", "true", "yes")
 
 # --- CLOUD DB CONNECTION ---
-import urllib.parse
+host = os.getenv("DB_HOST", "").strip()
 engine = None
 if host:
-    pw = urllib.parse.quote_plus(os.getenv("DB_PASSWORD", ""))
-    db_uri = f"mysql+pymysql://{os.getenv('DB_USER')}:{pw}@{host}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-    ssl_args = {"ssl": {"ca": os.path.join(BASE_DIR, "..", "4_frontend_app", "ca.pem")}}
+    raw_pw = os.getenv("DB_PASSWORD", "").strip()
+    dbname = os.getenv("DB_NAME", "terraguard_db").strip()
+    user = os.getenv("DB_USER", "").strip()
+    port = os.getenv("DB_PORT", "").strip()
+    db_uri = f"mysql+mysqlconnector://{user}:{raw_pw}@{host}:{port}/{dbname}"
+    ssl_args = {
+        "ssl_ca": os.path.join(BASE_DIR, "..", "4_frontend_app", "ca.pem"),
+        "ssl_verify_cert": False,
+        "auth_plugin": "caching_sha2_password"
+    }
     try:
         engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
     except Exception as e:
-        print(f"WARN: Aiven connection failed in Sensor: {e}")
-        engine = None
+        print(f"Sensor: Remote DB connection failed. Falling back to local SQLite: {e}")
+        db_path = os.path.join(BASE_DIR, "..", "terraguard_prod.db")
+        db_uri = f"sqlite:///{db_path}"
+        engine = create_engine(db_uri, pool_pre_ping=True)
 
 if engine is None:
     db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")

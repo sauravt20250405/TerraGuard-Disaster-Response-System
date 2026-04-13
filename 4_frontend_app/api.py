@@ -45,16 +45,19 @@ def serve_static_files(path):
 # --- CLOUD CONNECTION (All credentials from .env) ---
 def get_engine():
     import urllib.parse
-    host = os.getenv("DB_HOST", "")
-    port = os.getenv("DB_PORT", "")
-    user = os.getenv("DB_USER", "")
-    pw = urllib.parse.quote_plus(os.getenv("DB_PASSWORD", "")) if host else ""
-    dbname = os.getenv("DB_NAME", "")
+    host = os.getenv("DB_HOST", "").strip()
+    port = os.getenv("DB_PORT", "").strip()
+    user = os.getenv("DB_USER", "").strip()
+    raw_pw = os.getenv("DB_PASSWORD", "").strip()
+    dbname = os.getenv("DB_NAME", "").strip()
     
     engine = None
     if host:
-        db_uri = f"mysql+pymysql://{user}:{pw}@{host}:{port}/{dbname}"
-        ssl_args = {"ssl": {"ca": os.path.join(BASE_DIR, "ca.pem")}}
+        # Final Aiven Hanshake: Mandatory SSL + Official Plugin
+        db_uri = f"mysql+mysqlconnector://{user}:{raw_pw}@{host}:{port}/{dbname}?auth_plugin=mysql_native_password&ssl_disabled=False"
+        ssl_args = {
+            "ssl_ca": os.path.join(BASE_DIR, "ca.pem")
+        }
         try:
             # Force actual DB socket connection to see if Aiven IP is blocked
             engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
@@ -66,6 +69,7 @@ def get_engine():
             
     if engine is None:
         db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
+        print(f"DEBUG: Falling back to LOCAL SQLite at {db_path}")
         db_uri = f"sqlite:///{db_path}"
         engine = create_engine(db_uri, pool_pre_ping=True)
         

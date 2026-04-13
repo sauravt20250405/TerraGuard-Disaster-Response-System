@@ -3,7 +3,7 @@
 -- MySQL Workbench Queries for Presentation & Data Verification
 -- ============================================================
 
-USE defaultdb;
+USE terraguard_db;
 
 -- 1. VIEW ALL REGISTERED USERS (Disaster-Ready Profiles)
 SELECT 
@@ -66,7 +66,6 @@ ORDER BY dv.timestamp DESC;
 -- 5. VIEW WEATHER & LANDSLIDE RISK LOGS (AI Sensor Data)
 SELECT 
     log_id,
-    zone_id AS "Zone",
     rainfall_mm AS "Rainfall (mm)",
     soil_moisture_percent AS "Soil Moisture %",
     ai_risk_score AS "AI Risk Score",
