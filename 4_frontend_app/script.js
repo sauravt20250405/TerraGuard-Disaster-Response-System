@@ -307,11 +307,15 @@
                     err.style.color = 'var(--accent-green)';
                     err.textContent = "SMS Code Sent! Check your phone.";
                     
-                    // Hackathon Demo: Simulate physical SMS arrival via Alert
+                    // Hackathon Demo: Display OTP directly in UI for fail-safe visibility
                     if (data.sandbox_otp) {
                         setTimeout(() => {
-                            alert(`💬 NEW TEXT MESSAGE (Simulated)\n\nTerraGuard Security Code: ${data.sandbox_otp}`);
-                        }, 800);
+                            err.innerHTML = `<div style="padding:15px; border:1px solid var(--accent-green); background:rgba(48,164,108,0.1); border-radius:8px; color:#fff; font-weight:600; text-align:center; margin-bottom:15px;">
+                                💬 SIMULATED SMS RECEIVED<br>
+                                <div style="font-size:1.8rem; letter-spacing:6px; color:var(--accent-amber); margin:8px 0;">${data.sandbox_otp}</div>
+                                <small style="font-weight:400; color:var(--text-muted)">Enter this code below to verify</small>
+                            </div>`;
+                        }, 500);
                     }
                     
                     setTimeout(() => err.style.color = 'var(--accent-red)', 3000);
