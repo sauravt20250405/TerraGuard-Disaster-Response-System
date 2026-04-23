@@ -884,10 +884,13 @@ def upload_vault_document():
     file_b64 = base64.b64encode(file_bytes).decode('utf-8')
     file_type = file.content_type or 'application/octet-stream'
     
-    # Also save to disk as backup
+    # Also save to disk as backup (ignore if cloud environment restricts disk writes)
     filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
-    with open(filepath, 'wb') as f:
-        f.write(file_bytes)
+    try:
+        with open(filepath, 'wb') as f:
+            f.write(file_bytes)
+    except Exception as e:
+        print(f"Warning: Could not save to local disk ({e}), falling back to DB only.")
     
     try:
         with engine.begin() as conn:
@@ -931,6 +934,22 @@ def delete_vault_document(doc_id):
                 except:
                     pass
                 conn.execute(text("DELETE FROM Digital_Vault WHERE doc_id = :did"), {"did": doc_id})
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/vault/update/<int:doc_id>", methods=["PUT"])
+def update_vault_document(doc_id):
+    try:
+        data = request.json
+        new_name = data.get("filename")
+        if not new_name:
+            return jsonify({"error": "Missing filename"}), 400
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE Digital_Vault SET filename = :fname WHERE doc_id = :did"),
+                {"fname": new_name, "did": doc_id}
+            )
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1007,5 +1026,28 @@ def get_first_aid_live():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
+@app.route("/api/user_incidents/<int:user_id>", methods=["GET"])
+def get_user_incidents(user_id):
+    try:
+        with engine.begin() as conn:
+            incidents = conn.execute(
+                text("SELECT sos_id, raw_message, ai_category, ai_severity_score, status, timestamp FROM SOS_Requests WHERE user_id = :uid ORDER BY timestamp DESC"),
+                {"uid": user_id}
+            ).fetchall()
+        
+        result = []
+        for row in incidents:
+            result.append({
+                "sos_id": row.sos_id,
+                "message": row.raw_message,
+                "category": row.ai_category,
+                "severity": row.ai_severity_score,
+                "status": row.status,
+                "timestamp": str(row.timestamp)
+            })
+        return jsonify({"incidents": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    app.run(debug=True, host="0.0.0.0", port=5000)

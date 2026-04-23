@@ -926,6 +926,10 @@
                         <button class="checkin-btn" onclick="sendFamilyCheckin()">📍 I AM SAFE (Send Broadcast)</button>
                         <p id="checkinStatus" style="color:var(--accent-amber); margin-top: 10px; font-weight: 600; font-size: 0.95rem;"></p>
                     </div>
+
+                    <div class="panel" style="margin-top: 1.5rem;" id="userIncidentsList">
+                        <!-- User Incidents will be populated here -->
+                    </div>
                 </div>
 
                 <!-- User Profile (Disaster-Ready) -->
@@ -1344,6 +1348,7 @@
                             </div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <a href="${API_URL}/api/vault/download/${d.doc_id}" target="_blank" style="background:none; border:1px solid var(--accent-green); color:var(--accent-green); cursor:pointer; font-size:0.8rem; padding:4px 10px; border-radius:4px; text-decoration:none;">📥 View</a>
+                                <button onclick="updateVaultDocument(${d.doc_id}, '${d.filename.replace(/'/g, "\\'")}')" style="background:none; border:1px solid var(--accent-amber); color:var(--accent-amber); cursor:pointer; font-size:0.8rem; padding:4px 10px; border-radius:4px; text-decoration:none;">✏️ Rename</button>
                                 <button onclick="deleteVaultDocument(${d.doc_id})" style="background:none; border:none; color:var(--accent-red); cursor:pointer; font-size:1.2rem;">🗑️</button>
                             </div>
                         </div>
@@ -1392,6 +1397,26 @@
                 }
             } catch(e) {
                 alert("Failed to delete.");
+            }
+        }
+
+        async function updateVaultDocument(doc_id, old_name) {
+            const new_name = prompt("Enter new filename:", old_name);
+            if (!new_name || new_name.trim() === "" || new_name === old_name) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/api/vault/update/${doc_id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ filename: new_name.trim() })
+                });
+                if (res.ok) {
+                    await loadVaultDocuments();
+                } else {
+                    alert("Failed to update filename.");
+                }
+            } catch(e) {
+                alert("Network error.");
             }
         }
 
@@ -1916,6 +1941,32 @@
                 "Keep your digital vault updated with your latest IDs."
             ];
             document.getElementById("dailyTip").textContent = tips[Math.floor(Math.random() * tips.length)];
+            
+            fetchUserIncidents();
+        }
+
+        async function fetchUserIncidents() {
+            if (!currentUser || !currentUser.user_id) return;
+            try {
+                const res = await fetch(`${API_URL}/api/user_incidents/${currentUser.user_id}`);
+                const data = await res.json();
+                const container = document.getElementById("userIncidentsList");
+                if (!container) return; // Wait, we need to create this in the UI
+                
+                if (data.incidents && data.incidents.length > 0) {
+                    container.innerHTML = '<h4>Your SOS History</h4>' + data.incidents.map(inc => `
+                        <div style="background:var(--bg-dark); border-left:4px solid ${inc.status === 'Resolved' ? 'var(--accent-green)' : 'var(--accent-amber)'}; padding:10px; margin-bottom:10px; border-radius:4px;">
+                            <strong>${inc.category}</strong> - <span style="color:${inc.status === 'Resolved' ? 'var(--accent-green)' : 'var(--accent-amber)'}">${inc.status}</span><br>
+                            <small style="color:var(--text-muted)">${new Date(inc.timestamp).toLocaleString()} | Severity: ${inc.severity}/10</small><br>
+                            <span style="font-size:0.9rem">${inc.message}</span>
+                        </div>
+                    `).join("");
+                } else {
+                    container.innerHTML = '<div style="color:var(--text-muted); font-size:0.9rem;">No past SOS incidents reported.</div>';
+                }
+            } catch(e) {
+                console.warn("Could not load user incidents");
+            }
         }
 
         function saveFamilyContacts() {
@@ -2261,6 +2312,7 @@
                     document.getElementById("sosStatus").textContent = `Sent! Routed to ${data.category} (Severity: ${data.severity}/10)`;
                     setTimeout(() => { document.getElementById("sosStatus").textContent = ""; }, 5000);
                     fetchIncidents();
+                    if (typeof fetchUserIncidents === "function") fetchUserIncidents();
                 } else {
                     alert(data.error || "Failed to send SOS");
                 }
