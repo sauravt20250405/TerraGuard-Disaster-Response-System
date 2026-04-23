@@ -70,19 +70,18 @@ TerraGuard/
 
 ### 1. Requirements
 *   Python 3.8+
-*   MySQL 8.0+ (Tested extensively with **Aiven Cloud MySQL**)
-*   Required modules: `Flask`, `sqlalchemy`, `pymysql`, `pandas`, `joblib`, `scikit-learn`.
+*   PostgreSQL 15+ (Tested extensively with **Supabase PostgreSQL**)
+*   Required modules: `Flask`, `sqlalchemy`, `psycopg2-binary`, `pandas`, `joblib`, `scikit-learn`.
 
 ### 2. Environment Configuration
 Create a `.env` file:
 ```env
-DB_USER=avnadmin
-DB_PASSWORD=your_aiven_password
-DB_HOST=mysql-xxxx-project-xxxx.aivencloud.com
-DB_PORT=20095
-DB_NAME=defaultdb
+DB_USER=postgres.your_project_id
+DB_PASSWORD=your_supabase_password
+DB_HOST=aws-0-region.pooler.supabase.com
+DB_PORT=6543
+DB_NAME=postgres
 ```
-*(Place your `ca.pem` certificate in `4_frontend_app/` to enable SSL).*
 
 ### 3. Running the Suite
 1.  **Initialize Database**: Run the script in `1_database/setup_schema.sql` (or use the Workbench query suite).
