@@ -1,5 +1,5 @@
 
-        const API_URL = window.location.origin;
+        const API_URL = (window.location.origin === "file://" || window.location.origin === "null" || (window.location.port && window.location.port !== "5000")) ? "http://127.0.0.1:5000" : window.location.origin;
         let USER_COORDS = [31.1048, 77.1734];
         let currentCity = "Detecting Location...";
         let map, mapSos, mapIncidents;

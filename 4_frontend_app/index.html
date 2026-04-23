@@ -1651,7 +1651,7 @@
             fetchLiveNews();
             if (typeof initCivilianDashboard === "function") initCivilianDashboard();
             clearInterval(refreshInterval);
-            refreshInterval = setInterval(refreshData, 5000);
+            refreshInterval = setInterval(refreshData, 10000);
             applyLanguage(currentLang);
         }
 
@@ -1865,7 +1865,6 @@
         function refreshData() {
             fetchRisk();
             fetchIncidents();
-            fetchDisasterRisk();
             if (typeof fetchCommunityReports === "function") fetchCommunityReports();
             if (currentUser && currentUser.role_name !== "Civilian") fetchDashboard();
         }
@@ -2188,6 +2187,17 @@
                 document.getElementById("profileEmergencyContact").value = data.emergency_contact || "";
                 document.getElementById("profileAddress").value = data.address || "";
                 document.getElementById("profileMedical").value = data.medical_conditions || "";
+                
+                if (currentUser.role_name === "Civilian") {
+                    const bg = data.blood_group;
+                    const ec = data.emergency_contact;
+                    if (!bg || bg === "Unknown" || !ec) {
+                        setTimeout(() => {
+                            showView("profile");
+                            alert("GOVERNMENT DIRECTIVE: Mandatory Profile Completion required for Civilian safety tracking. Please fill out your medical and emergency contact details.");
+                        }, 1000);
+                    }
+                }
             } catch(e) { console.warn("Profile load failed:", e); }
         }
 
@@ -2227,6 +2237,15 @@
             let msg = document.getElementById("sosMessage").value.trim();
             if (currentThreat !== "General") msg = `[${currentThreat}] ` + msg;
             if (!msg || msg === `[${currentThreat}] `) return alert("Please specify threat details.");
+
+            if (currentUser?.role_name === "Civilian") {
+                const bg = document.getElementById("profileBlood").value;
+                const ec = document.getElementById("profileEmergencyContact").value.trim();
+                if (!bg || bg === "Unknown" || !ec) {
+                    showView("profile");
+                    return alert("EMERGENCY PROTOCOL: You must complete your Disaster-Ready Profile (Blood Group & Emergency Contact) before broadcasting an SOS.");
+                }
+            }
 
             const payload = { message: msg, latitude: USER_COORDS[0], longitude: USER_COORDS[1] };
             if (currentUser?.user_id) payload.user_id = parseInt(currentUser.user_id, 10);

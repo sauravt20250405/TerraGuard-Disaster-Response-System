@@ -43,6 +43,7 @@ def serve_static_files(path):
     return send_from_directory(BASE_DIR, path)
 
 # --- CLOUD CONNECTION (All credentials from .env) ---
+# --- CLOUD CONNECTION (All credentials from .env) ---
 def get_engine():
     import urllib.parse
     host = os.getenv("DB_HOST", "").strip()
@@ -50,22 +51,37 @@ def get_engine():
     user = os.getenv("DB_USER", "").strip()
     raw_pw = os.getenv("DB_PASSWORD", "").strip()
     dbname = os.getenv("DB_NAME", "").strip()
-    
     engine = None
+    db_uri = None
+    
     if host:
-        # Final Aiven Hanshake: Mandatory SSL + Official Plugin
-        db_uri = f"mysql+mysqlconnector://{user}:{raw_pw}@{host}:{port}/{dbname}?auth_plugin=mysql_native_password&ssl_disabled=False"
-        ssl_args = {
-            "ssl_ca": os.path.join(BASE_DIR, "ca.pem")
-        }
-        try:
-            # Force actual DB socket connection to see if Aiven IP is blocked
-            engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-        except Exception as e:
-            print(f"WARN: Aiven MySQL fully rejected connection (1045/SSL). Falling back: {e}")
-            engine = None
+        # Check for Supabase/PostgreSQL
+        if "supabase" in host or port == "5432":
+            db_uri = f"postgresql+psycopg2://{user}:{urllib.parse.quote_plus(raw_pw)}@{host}:{port}/{dbname}"
+            try:
+                print(f"Trying PostgreSQL (Supabase)...")
+                engine = create_engine(db_uri, pool_pre_ping=True, connect_args={"connect_timeout": 10})
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                print("SUCCESS: Connected to PostgreSQL")
+            except Exception as e:
+                print(f"WARN: PostgreSQL connection failed: {e}")
+                engine = None
+
+        if engine is None:
+            # Final Aiven Hanshake: Mandatory SSL + Official Plugin
+            db_uri = f"mysql+mysqlconnector://{user}:{raw_pw}@{host}:{port}/{dbname}?auth_plugin=mysql_native_password&ssl_disabled=False"
+            ssl_args = {
+                "ssl_ca": os.path.join(BASE_DIR, "ca.pem")
+            }
+            try:
+                # Force actual DB socket connection to see if Aiven IP is blocked
+                engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+            except Exception as e:
+                print(f"WARN: MySQL connection failed. Falling back: {e}")
+                engine = None
             
     if engine is None:
         db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
@@ -73,19 +89,29 @@ def get_engine():
         db_uri = f"sqlite:///{db_path}"
         engine = create_engine(db_uri, pool_pre_ping=True)
         
-    is_sqlite = "sqlite" in db_uri
-    ai_str = "AUTOINCREMENT" if is_sqlite else "AUTO_INCREMENT"
+    url_str = str(engine.url)
+    is_sqlite = "sqlite" in url_str
+    is_postgres = "postgresql" in url_str
+    
+    if is_sqlite:
+        ai_str = "INTEGER PRIMARY KEY AUTOINCREMENT"
+    elif is_postgres:
+        ai_str = "SERIAL PRIMARY KEY"
+    else:
+        ai_str = "INTEGER PRIMARY KEY AUTO_INCREMENT"
+    
+    txt_type = "TEXT" if (is_sqlite or is_postgres) else "MEDIUMTEXT"
     
     with engine.begin() as conn:
         conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS Roles (
-                role_id INTEGER PRIMARY KEY {ai_str},
+                role_id {ai_str},
                 role_name VARCHAR(50) UNIQUE NOT NULL
             )
         '''))
         conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS Users (
-                user_id INTEGER PRIMARY KEY {ai_str},
+                user_id {ai_str},
                 name VARCHAR(100) NOT NULL,
                 phone_number VARCHAR(15) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
@@ -98,9 +124,12 @@ def get_engine():
                 FOREIGN KEY (role_id) REFERENCES Roles(role_id) ON DELETE SET NULL
             )
         '''))
+        
+        # SOS_Requests - Handle TIMESTAMP/DATETIME
+        ts_type = "TIMESTAMP" if is_postgres else "DATETIME"
         conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS SOS_Requests (
-                sos_id INTEGER PRIMARY KEY {ai_str},
+                sos_id {ai_str},
                 user_id INTEGER,
                 raw_message TEXT NOT NULL,
                 latitude DECIMAL(10, 8),
@@ -108,13 +137,14 @@ def get_engine():
                 ai_severity_score INTEGER DEFAULT 0,
                 ai_category VARCHAR(50) DEFAULT 'Unclassified',
                 status VARCHAR(20) DEFAULT 'Pending',
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp {ts_type} DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
             )
         '''))
+        
         conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS Community_Reports (
-                report_id INTEGER PRIMARY KEY {ai_str},
+                report_id {ai_str},
                 user_id INTEGER,
                 report_type VARCHAR(50),
                 description TEXT NOT NULL,
@@ -122,19 +152,19 @@ def get_engine():
                 longitude DECIMAL(11, 8),
                 status VARCHAR(20) DEFAULT 'Reported',
                 verification_count INTEGER DEFAULT 1,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp {ts_type} DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
             )
         '''))
         conn.execute(text(f'''
             CREATE TABLE IF NOT EXISTS Digital_Vault (
-                doc_id INTEGER PRIMARY KEY {ai_str},
+                doc_id {ai_str},
                 user_id INTEGER,
                 filename VARCHAR(255) NOT NULL,
                 filepath TEXT NOT NULL,
-                file_data MEDIUMTEXT,
+                file_data {txt_type},
                 file_type VARCHAR(100) DEFAULT 'application/octet-stream',
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp {ts_type} DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
             )
         '''))
@@ -147,14 +177,14 @@ def get_engine():
             conn.execute(text("INSERT INTO Users (name, phone_number, password_hash, role_id) VALUES ('Default NDRF', '1234567890', :pw, 4)"), {"pw": default_pw})
             conn.execute(text("INSERT INTO Users (name, phone_number, password_hash, role_id) VALUES ('Police HQ', '0987654321', :pw, 3)"), {"pw": default_pw})
         
-        # --- Schema Migration: Add new columns to existing tables ---
+        # --- Schema Migration ---
         for col, col_def in [("blood_group", "VARCHAR(10) DEFAULT 'Unknown'"), ("medical_conditions", "TEXT DEFAULT ''"),
                              ("emergency_contact", "VARCHAR(15) DEFAULT ''"), ("address", "TEXT DEFAULT ''"), ("age", "INTEGER DEFAULT 0")]:
             try:
                 conn.execute(text(f"ALTER TABLE Users ADD COLUMN {col} {col_def}"))
             except:
-                pass  # Column already exists
-        for col, col_def in [("file_data", "MEDIUMTEXT"), ("file_type", "VARCHAR(100) DEFAULT 'application/octet-stream'")]:
+                pass
+        for col, col_def in [("file_data", txt_type), ("file_type", "VARCHAR(100) DEFAULT 'application/octet-stream'")]:
             try:
                 conn.execute(text(f"ALTER TABLE Digital_Vault ADD COLUMN {col} {col_def}"))
             except:
@@ -387,11 +417,19 @@ def register():
             if existing:
                 return jsonify({"error": "Phone number already registered. Please login."}), 400
             
-            result = conn.execute(
-                text("INSERT INTO Users (name, phone_number, password_hash, role_id) VALUES (:name, :phone, :pw, :role)"),
-                {"name": name, "phone": phone_number, "pw": password_hash, "role": role_id}
-            )
-            new_user_id = result.lastrowid
+            # PostgreSQL needs RETURNING to get new IDs
+            if "postgresql" in str(engine.url):
+                result = conn.execute(
+                    text("INSERT INTO Users (name, phone_number, password_hash, role_id) VALUES (:name, :phone, :pw, :role) RETURNING user_id"),
+                    {"name": name, "phone": phone_number, "pw": password_hash, "role": role_id}
+                )
+                new_user_id = result.fetchone()[0]
+            else:
+                result = conn.execute(
+                    text("INSERT INTO Users (name, phone_number, password_hash, role_id) VALUES (:name, :phone, :pw, :role)"),
+                    {"name": name, "phone": phone_number, "pw": password_hash, "role": role_id}
+                )
+                new_user_id = result.lastrowid
             
         del OTP_CACHE[phone_number]
         

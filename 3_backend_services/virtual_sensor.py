@@ -16,47 +16,74 @@ DEV_MODE = os.getenv("TERRAGUARD_DEV_MODE", "").strip().lower() in ("1", "true",
 
 # --- CLOUD DB CONNECTION ---
 host = os.getenv("DB_HOST", "").strip()
+port = os.getenv("DB_PORT", "").strip()
+user = os.getenv("DB_USER", "").strip()
+raw_pw = os.getenv("DB_PASSWORD", "").strip()
+dbname = os.getenv("DB_NAME", "terraguard_db").strip()
+
 engine = None
+db_uri = None
+
 if host:
-    raw_pw = os.getenv("DB_PASSWORD", "").strip()
-    dbname = os.getenv("DB_NAME", "terraguard_db").strip()
-    user = os.getenv("DB_USER", "").strip()
-    port = os.getenv("DB_PORT", "").strip()
-    db_uri = f"mysql+mysqlconnector://{user}:{raw_pw}@{host}:{port}/{dbname}"
-    ssl_args = {
-        "ssl_ca": os.path.join(BASE_DIR, "..", "4_frontend_app", "ca.pem"),
-        "ssl_verify_cert": False,
-        "auth_plugin": "caching_sha2_password"
-    }
-    try:
-        engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-    except Exception as e:
-        print(f"Sensor: Remote DB connection failed. Falling back to local SQLite: {e}")
-        db_path = os.path.join(BASE_DIR, "..", "terraguard_prod.db")
-        db_uri = f"sqlite:///{db_path}"
-        engine = create_engine(db_uri, pool_pre_ping=True)
+    # Check for Supabase/PostgreSQL
+    if "supabase" in host or port == "5432":
+        db_uri = f"postgresql+psycopg2://{user}:{urllib.parse.quote_plus(raw_pw)}@{host}:{port}/{dbname}"
+        try:
+            print(f"Sensor: Trying PostgreSQL (Supabase)...")
+            engine = create_engine(db_uri, pool_pre_ping=True)
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            print("Sensor: SUCCESS - Connected to PostgreSQL")
+        except Exception as e:
+            print(f"Sensor: PostgreSQL connection failed: {e}")
+            engine = None
+
+    if engine is None:
+        # Fallback to MySQL
+        db_uri = f"mysql+mysqlconnector://{user}:{raw_pw}@{host}:{port}/{dbname}"
+        ssl_args = {
+            "ssl_ca": os.path.join(BASE_DIR, "..", "4_frontend_app", "ca.pem"),
+            "ssl_verify_cert": False,
+            "auth_plugin": "caching_sha2_password"
+        }
+        try:
+            engine = create_engine(db_uri, pool_pre_ping=True, connect_args=ssl_args)
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            print("Sensor: SUCCESS - Connected to MySQL")
+        except Exception as e:
+            print(f"Sensor: Remote DB connection failed. Falling back to local SQLite: {e}")
+            engine = None
 
 if engine is None:
     db_path = os.path.join(PROJECT_ROOT, "terraguard_prod.db")
     db_uri = f"sqlite:///{db_path}"
     engine = create_engine(db_uri, pool_pre_ping=True)
 
-is_sqlite = "sqlite" in db_uri
-ai_str = "AUTOINCREMENT" if is_sqlite else "AUTO_INCREMENT"
+url_str = str(engine.url)
+is_sqlite = "sqlite" in url_str
+is_postgres = "postgresql" in url_str
+
+if is_sqlite:
+    ai_str = "INTEGER PRIMARY KEY AUTOINCREMENT"
+elif is_postgres:
+    ai_str = "SERIAL PRIMARY KEY"
+else:
+    ai_str = "INTEGER PRIMARY KEY AUTO_INCREMENT"
+
+ts_type = "TIMESTAMP" if is_postgres else "DATETIME"
 
 try:
     if not DEV_MODE:
         with engine.begin() as conn:
             conn.execute(text(f'''
                 CREATE TABLE IF NOT EXISTS Weather_Logs (
-                    log_id INTEGER PRIMARY KEY {ai_str},
+                    log_id {ai_str},
                     zone_id INTEGER,
                     rainfall_mm FLOAT,
                     soil_moisture_percent FLOAT,
                     ai_risk_score FLOAT,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                    timestamp {ts_type} DEFAULT CURRENT_TIMESTAMP
                 )
             '''))
         print("Database Ready!")
@@ -139,7 +166,7 @@ try:
         
         # Ask the AI
         risk_probabilities = landslide_model.predict_proba(ai_input)[0]
-        risk_score = round(risk_probabilities[1] * 100, 2) 
+        risk_score = float(round(risk_probabilities[1] * 100, 2))
         
         print(f"[LIVE] Live Zone -> Rain: {rain}mm | Soil: {soil:.1f}% | AI Risk Score: {risk_score}%")
         
